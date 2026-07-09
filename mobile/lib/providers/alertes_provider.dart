@@ -108,6 +108,18 @@ class AlertesProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> mettreAJourAlerte(String id, Map<String, dynamic> data) async {
+    try {
+      await ApiService.mettreAJourAlerte(id, data);
+      await chargerAlertes(period: _todoPeriod);
+      await chargerHistoriqueAlertes();
+      return true;
+    } catch (e) {
+      debugPrint('Erreur MAJ alerte: $e');
+      return false;
+    }
+  }
+
   Future<bool> effacerHistorique() async {
     try {
       await ApiService.effacerHistoriqueAlertes();

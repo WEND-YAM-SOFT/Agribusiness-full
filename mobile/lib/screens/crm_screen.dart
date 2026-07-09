@@ -513,6 +513,11 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                 spacing: 4,
                 children: [
                   IconButton(
+                    tooltip: 'Modifier',
+                    icon: const Icon(Icons.edit_outlined, color: Colors.blueGrey),
+                    onPressed: t.id == null ? null : () => _showModifierTache(t),
+                  ),
+                  IconButton(
                     tooltip: 'Marquer faite',
                     icon: const Icon(Icons.check_circle, color: Colors.green),
                     onPressed: t.id == null || t.statut == 'terminee'
@@ -707,6 +712,144 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                 });
               },
               child: const Text('Créer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showModifierTache(TacheCRM t) {
+    if (t.id == null) return;
+
+    context.read<ClientsProvider>().chargerClients();
+    final titre = TextEditingController(text: t.titre);
+    final desc = TextEditingController(text: t.description);
+    final assigneA = TextEditingController(text: t.assigneA);
+    String type = t.type;
+    String priorite = t.priorite;
+    String statut = t.statut;
+    bool rappelActive = t.rappelActive;
+    DateTime echeance = t.dateEcheance;
+    String? selectedClientId = t.clientId.isEmpty ? null : t.clientId;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Modifier tâche CRM'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titre, decoration: const InputDecoration(labelText: 'Titre *')),
+                TextField(controller: desc, decoration: const InputDecoration(labelText: 'Description')),
+                TextField(controller: assigneA, decoration: const InputDecoration(labelText: 'Assignée à')),
+                DropdownButtonFormField<String>(
+                  initialValue: type,
+                  items: const [
+                    DropdownMenuItem(value: 'relance', child: Text('Relance')),
+                    DropdownMenuItem(value: 'rendez_vous', child: Text('Rendez-vous')),
+                    DropdownMenuItem(value: 'appel', child: Text('Appel')),
+                    DropdownMenuItem(value: 'suivi', child: Text('Suivi')),
+                  ],
+                  onChanged: (v) => setDialogState(() => type = v ?? type),
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: priorite,
+                  items: const [
+                    DropdownMenuItem(value: 'basse', child: Text('Basse')),
+                    DropdownMenuItem(value: 'moyenne', child: Text('Moyenne')),
+                    DropdownMenuItem(value: 'haute', child: Text('Haute')),
+                    DropdownMenuItem(value: 'urgente', child: Text('Urgente')),
+                  ],
+                  onChanged: (v) => setDialogState(() => priorite = v ?? priorite),
+                  decoration: const InputDecoration(labelText: 'Priorité'),
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: statut,
+                  items: const [
+                    DropdownMenuItem(value: 'a_faire', child: Text('À faire')),
+                    DropdownMenuItem(value: 'en_cours', child: Text('En cours')),
+                    DropdownMenuItem(value: 'terminee', child: Text('Terminée')),
+                    DropdownMenuItem(value: 'annulee', child: Text('Annulée')),
+                  ],
+                  onChanged: (v) => setDialogState(() => statut = v ?? statut),
+                  decoration: const InputDecoration(labelText: 'Statut'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Rappel actif'),
+                  value: rappelActive,
+                  onChanged: (v) => setDialogState(() => rappelActive = v),
+                ),
+                Consumer<ClientsProvider>(
+                  builder: (context, clientsProvider, _) {
+                    final items = <DropdownMenuItem<String?>>[
+                      const DropdownMenuItem<String?>(value: null, child: Text('Aucun client')),
+                      ...clientsProvider.clients.map(
+                        (client) => DropdownMenuItem<String?>(
+                          value: client.id,
+                          child: Text(client.nomComplet),
+                        ),
+                      ),
+                    ];
+                    final currentValue = items.any((item) => item.value == selectedClientId)
+                        ? selectedClientId
+                        : null;
+                    return DropdownButtonFormField<String?>(
+                      initialValue: currentValue,
+                      items: items,
+                      onChanged: (v) => setDialogState(() => selectedClientId = v),
+                      decoration: const InputDecoration(labelText: 'Client lié (optionnel)'),
+                    );
+                  },
+                ),
+                ListTile(
+                  title: const Text('Échéance'),
+                  subtitle: Text('${echeance.day}/${echeance.month}/${echeance.year}'),
+                  trailing: const Icon(Icons.calendar_month),
+                  onTap: () async {
+                    final d = await showDatePicker(
+                      context: context,
+                      initialDate: echeance,
+                      firstDate: DateTime.now().subtract(const Duration(days: 3650)),
+                      lastDate: DateTime.now().add(const Duration(days: 3650)),
+                    );
+                    if (d != null) {
+                      setDialogState(() => echeance = d);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () async {
+                if (titre.text.trim().isEmpty) return;
+                final ok = await this.context.read<CrmProvider>().mettreAJourTache(
+                  t.id!,
+                  {
+                    'clientId': selectedClientId,
+                    'titre': titre.text.trim(),
+                    'description': desc.text.trim(),
+                    'type': type,
+                    'priorite': priorite,
+                    'statut': statut,
+                    'rappelActive': rappelActive,
+                    'assigneA': assigneA.text.trim(),
+                    'dateEcheance': echeance.toIso8601String(),
+                  },
+                );
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text(ok ? 'Tâche modifiée' : 'Erreur modification tâche')),
+                );
+              },
+              child: const Text('Enregistrer'),
             ),
           ],
         ),

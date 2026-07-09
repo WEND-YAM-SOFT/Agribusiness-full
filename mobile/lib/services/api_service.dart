@@ -230,6 +230,9 @@ class ApiService {
   static Future<Map<String, dynamic>> marquerAlerteFaite(String id, {Map<String, dynamic>? data}) async =>
       Map<String, dynamic>.from(_ensureSuccess(await _put('/alertes/$id/fait', body: data ?? {})));
 
+  static Future<Map<String, dynamic>> mettreAJourAlerte(String id, Map<String, dynamic> data) async =>
+      Map<String, dynamic>.from(_ensureSuccess(await _put('/alertes/$id', body: data)));
+
     static Future<void> effacerHistoriqueAlertes() async {
         _ensureSuccess(await _delete('/alertes/historique/all'));
     }

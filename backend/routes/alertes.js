@@ -370,6 +370,58 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.put('/:id', async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const existing = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (existing.error) return res.status(400).json({ message: existing.error.message });
+    if (!existing.data) return res.status(404).json({ message: 'Alerte non trouvée' });
+    if (existing.data.automatique === true) {
+      return res.status(400).json({ message: 'Les alertes automatiques ne sont pas modifiables' });
+    }
+
+    const updates = { updated_at: new Date().toISOString() };
+    const map = {
+      titre: 'titre',
+      message: 'message',
+      type: 'type',
+      dateEcheance: 'date_echeance',
+      bandeId: 'bande_id',
+      recurrence: 'recurrence',
+      priorite: 'priorite',
+      source: 'source',
+      statut: 'statut',
+    };
+
+    for (const [k, dbk] of Object.entries(map)) {
+      if (Object.prototype.hasOwnProperty.call(req.body, k)) {
+        updates[dbk] = req.body[k];
+      }
+    }
+
+    const saved = await api
+      .from('alertes')
+      .update(updates)
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+    return res.json(mapAlerteRow(saved.data));
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+});
+
 router.put('/:id/fait', async (req, res) => {
   try {
     const api = getAdminClient();

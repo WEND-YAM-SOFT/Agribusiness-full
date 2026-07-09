@@ -231,13 +231,26 @@ class _AlertesScreenState extends State<AlertesScreen> {
           ],
         ),
         trailing: allowComplete && alerte.id != null
-          ? TextButton.icon(
-            icon: const Icon(Icons.check_circle_outline, color: Colors.green),
-            label: const Text('Tâche faite'),
-                onPressed: () {
-                  context.read<AlertesProvider>().marquerFaite(alerte);
-                },
-            )
+            ? SizedBox(
+                width: 190,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      tooltip: 'Modifier',
+                      icon: const Icon(Icons.edit_outlined, color: Colors.blueGrey),
+                      onPressed: () => _showModifierAlerteDialog(alerte),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+                      label: const Text('Tâche faite'),
+                      onPressed: () {
+                        context.read<AlertesProvider>().marquerFaite(alerte);
+                      },
+                    ),
+                  ],
+                ),
+              )
             : null,
         isThreeLine: true,
       ),
@@ -335,6 +348,99 @@ class _AlertesScreenState extends State<AlertesScreen> {
                 });
               },
               child: const Text('Créer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showModifierAlerteDialog(Alerte alerte) {
+    if (alerte.id == null || alerte.automatique) return;
+
+    final titreCtrl = TextEditingController(text: alerte.titre);
+    final messageCtrl = TextEditingController(text: alerte.message);
+    String selectedType = alerte.type;
+    String selectedPriorite = alerte.priorite;
+    DateTime selectedDate = alerte.dateEcheance;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Modifier tâche'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titreCtrl, decoration: const InputDecoration(labelText: 'Titre *')),
+                TextField(controller: messageCtrl, decoration: const InputDecoration(labelText: 'Message')),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedType,
+                  items: const [
+                    DropdownMenuItem(value: 'vaccination', child: Text('Vaccination')),
+                    DropdownMenuItem(value: 'alimentation', child: Text('Alimentation')),
+                    DropdownMenuItem(value: 'stock_bas', child: Text('Stock bas')),
+                    DropdownMenuItem(value: 'vente', child: Text('Vente')),
+                    DropdownMenuItem(value: 'medicament', child: Text('Médicament')),
+                    DropdownMenuItem(value: 'autre', child: Text('Autre')),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedType = v ?? selectedType),
+                  decoration: const InputDecoration(labelText: 'Type'),
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedPriorite,
+                  items: const [
+                    DropdownMenuItem(value: 'basse', child: Text('Basse')),
+                    DropdownMenuItem(value: 'moyenne', child: Text('Moyenne')),
+                    DropdownMenuItem(value: 'haute', child: Text('Haute')),
+                    DropdownMenuItem(value: 'urgente', child: Text('Urgente')),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedPriorite = v ?? selectedPriorite),
+                  decoration: const InputDecoration(labelText: 'Priorité'),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  title: const Text('Date d\'échéance'),
+                  subtitle: Text(DateFormat('dd/MM/yyyy').format(selectedDate)),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                      lastDate: DateTime.now().add(const Duration(days: 3650)),
+                    );
+                    if (date != null) {
+                      setDialogState(() => selectedDate = date);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () async {
+                if (titreCtrl.text.trim().isEmpty) return;
+                final ok = await context.read<AlertesProvider>().mettreAJourAlerte(
+                  alerte.id!,
+                  {
+                    'titre': titreCtrl.text.trim(),
+                    'message': messageCtrl.text.trim(),
+                    'type': selectedType,
+                    'priorite': selectedPriorite,
+                    'dateEcheance': selectedDate.toIso8601String(),
+                  },
+                );
+                if (!mounted) return;
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text(ok ? 'Tâche modifiée' : 'Erreur modification tâche')),
+                );
+              },
+              child: const Text('Enregistrer'),
             ),
           ],
         ),
