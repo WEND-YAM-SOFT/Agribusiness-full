@@ -4,6 +4,10 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function readStatus(row) {
+  return (row?.statut || row?.status || '').toString();
+}
+
 function mapInteraction(row, commande = null) {
   return {
     _id: row.id,
@@ -59,11 +63,11 @@ router.get('/dashboard', async (req, res) => {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
 
-    const clientsRes = await api.from('clients').select('id,statut,chiffre_affaires_cumul,created_at').eq('company_id', companyId);
+    const clientsRes = await api.from('clients').select('*').eq('company_id', companyId);
     if (clientsRes.error) return res.status(500).json({ message: clientsRes.error.message });
     const clients = clientsRes.data || [];
 
-    const commandesRes = await api.from('commandes').select('id,statut,montant_total,created_at').eq('company_id', companyId);
+    const commandesRes = await api.from('commandes').select('*').eq('company_id', companyId);
     if (commandesRes.error) return res.status(500).json({ message: commandesRes.error.message });
     const commandes = commandesRes.data || [];
 
@@ -80,10 +84,10 @@ router.get('/dashboard', async (req, res) => {
     debutMois.setHours(0, 0, 0, 0);
 
     const totalClients = clients.length;
-    const totalProspects = clients.filter((c) => c.statut === 'prospect').length;
-    const clientsActifs = clients.filter((c) => c.statut === 'actif').length;
+    const totalProspects = clients.filter((c) => readStatus(c) === 'prospect').length;
+    const clientsActifs = clients.filter((c) => readStatus(c) === 'actif').length;
     const nouveauxClients = clients.filter((c) => new Date(c.created_at).getTime() >= debutMois.getTime()).length;
-    const commandesEnAttente = commandes.filter((c) => c.statut === 'en_attente').length;
+    const commandesEnAttente = commandes.filter((c) => readStatus(c) === 'en_attente').length;
     const relancesAFaire = taches.filter((t) => ['a_faire', 'en_cours'].includes(t.statut) && new Date(t.date_echeance).getTime() <= Date.now()).length;
 
     const topClients = [...clients]
@@ -93,8 +97,8 @@ router.get('/dashboard', async (req, res) => {
         _id: c.id,
         nom: c.nom,
         prenom: c.prenom || '',
-        chiffreAffairesCumul: Number(c.chiffre_affaires_cumul || 0),
-        statut: c.statut || 'prospect',
+        chiffreAffairesCumul: Number(c.chiffre_affaires_cumul ?? c.chiffreAffairesCumul ?? 0),
+        statut: readStatus(c) || 'prospect',
       }));
 
     const byType = new Map();

@@ -4,6 +4,10 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function readStatus(row) {
+  return (row?.statut || row?.status || '').toString();
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -167,11 +171,11 @@ router.get('/automatiques', async (req, res) => {
       }
     }
 
-    const commandesRes = await api.from('commandes').select('id,statut,livraisons').eq('company_id', companyId);
+    const commandesRes = await api.from('commandes').select('*').eq('company_id', companyId);
     if (commandesRes.error) return res.status(500).json({ message: commandesRes.error.message });
 
     const commandes = commandesRes.data || [];
-    const commandesApreparer = commandes.filter((c) => ['confirmee', 'en_preparation'].includes(c.statut)).length;
+    const commandesApreparer = commandes.filter((c) => ['confirmee', 'en_preparation'].includes(readStatus(c))).length;
     if (commandesApreparer > 0) {
       alertes.push({
         id: 'commercial-prepare',
@@ -186,8 +190,8 @@ router.get('/automatiques', async (req, res) => {
     }
 
     const commandesAlivrer = commandes.filter((c) => {
-      if (['confirmee', 'en_preparation', 'payee'].includes(c.statut)) return true;
-      return toArray(c.livraisons).some((l) => ['planifiee', 'en_cours'].includes(l.statutLivraison));
+      if (['confirmee', 'en_preparation', 'payee'].includes(readStatus(c))) return true;
+      return toArray(c.livraisons || c.deliveries || []).some((l) => ['planifiee', 'en_cours'].includes(l.statutLivraison));
     }).length;
 
     if (commandesAlivrer > 0) {

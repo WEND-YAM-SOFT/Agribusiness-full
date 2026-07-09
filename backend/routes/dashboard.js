@@ -4,6 +4,10 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function readStatus(row) {
+  return (row?.statut || row?.status || '').toString();
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -138,16 +142,16 @@ router.get('/global', async (req, res) => {
     const tauxMortalite = effectifInitial > 0 ? (mortaliteTotale / effectifInitial) * 100 : 0;
 
     const clientIds = [...new Set(commandes.map((commande) => String(commande.client_id || '')).filter(Boolean))];
-    const clientsRes = await api.from('clients').select('id,statut').eq('company_id', companyId);
+    const clientsRes = await api.from('clients').select('*').eq('company_id', companyId);
     if (clientsRes.error) return res.status(500).json({ message: clientsRes.error.message });
 
     const clients = clientsRes.data || [];
     const clientsActifs = bandeId
-      ? clients.filter((c) => clientIds.includes(String(c.id)) && c.statut === 'actif').length
-      : clients.filter((c) => c.statut === 'actif').length;
+      ? clients.filter((c) => clientIds.includes(String(c.id)) && readStatus(c) === 'actif').length
+      : clients.filter((c) => readStatus(c) === 'actif').length;
 
     const nbCommandes = commandes.length;
-    const commandesEnAttente = commandes.filter((c) => c.statut === 'en_attente').length;
+    const commandesEnAttente = commandes.filter((c) => readStatus(c) === 'en_attente').length;
 
     const ventesMap = new Map();
     for (const c of commandes) {
