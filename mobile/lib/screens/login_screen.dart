@@ -112,7 +112,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
     if (!ok && mounted) {
-      setState(() => _error = 'Identifiants incorrects ou compte inactif');
+      setState(() => _error = auth.lastError?.isNotEmpty == true
+          ? auth.lastError
+          : 'Identifiants incorrects ou compte inactif');
     }
   }
 

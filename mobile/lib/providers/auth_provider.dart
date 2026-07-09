@@ -10,12 +10,14 @@ class AuthProvider with ChangeNotifier {
   String? _token;
   Map<String, dynamic>? _user;
   bool _isLoading = false;
+  String? _lastError;
   Timer? _inactivityTimer;
   int _sessionTimeoutMinutes = 30;
 
   String? get token => _token;
   Map<String, dynamic>? get user => _user;
   bool get isLoading => _isLoading;
+  String? get lastError => _lastError;
   bool get isAuthenticated => _token != null && _user != null;
 
   bool get isAdmin => (_user?['role'] ?? '') == 'admin';
@@ -55,6 +57,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<bool> login(String email, String password) async {
     _isLoading = true;
+    _lastError = null;
     notifyListeners();
 
     try {
@@ -70,7 +73,8 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       _isLoading = false;
       notifyListeners();
       return false;
