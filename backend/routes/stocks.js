@@ -5,6 +5,75 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+function toLegacyStockPayload(payload) {
+  const mapped = { ...payload };
+  if (Object.prototype.hasOwnProperty.call(mapped, 'company_id')) {
+    mapped.companyId = mapped.company_id;
+    delete mapped.company_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'quantite_actuelle')) {
+    mapped.quantiteActuelle = mapped.quantite_actuelle;
+    delete mapped.quantite_actuelle;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'seuil_alerte')) {
+    mapped.seuilAlerte = mapped.seuil_alerte;
+    delete mapped.seuil_alerte;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'prix_unitaire')) {
+    mapped.prixUnitaire = mapped.prix_unitaire;
+    delete mapped.prix_unitaire;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'date_creation_stock')) {
+    mapped.dateCreationStock = mapped.date_creation_stock;
+    delete mapped.date_creation_stock;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'date_expiration')) {
+    mapped.dateExpiration = mapped.date_expiration;
+    delete mapped.date_expiration;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'updated_at')) {
+    mapped.updatedAt = mapped.updated_at;
+    delete mapped.updated_at;
+  }
+  return mapped;
+}
+
+async function insertStockCompat(client, payload) {
+  let candidate = { ...payload };
+  let legacyAttempted = false;
+
+  for (let i = 0; i < 8; i += 1) {
+    const result = await client.from('stocks').insert(candidate).select('*').single();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+
+    if (!legacyAttempted && missingColumn.includes('_')) {
+      candidate = toLegacyStockPayload(candidate);
+      legacyAttempted = true;
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: 'Creation stock impossible: schema incompatible apres tentatives de fallback' },
+  };
+}
+
 function parseNumberInput(value) {
   if (typeof value === 'number') return value;
   const normalized = (value ?? '').toString().trim().replace(',', '.');
@@ -39,8 +108,8 @@ function recalculerQuantite(mouvements = []) {
 }
 
 function mapStockRow(row) {
-  const quantiteActuelle = Number(row.quantite_actuelle || 0);
-  const seuilAlerte = Number(row.seuil_alerte || 0);
+  const quantiteActuelle = Number(row.quantite_actuelle ?? row.quantiteActuelle ?? 0);
+  const seuilAlerte = Number(row.seuil_alerte ?? row.seuilAlerte ?? 0);
   return {
     _id: row.id,
     nom: row.nom,
@@ -48,16 +117,16 @@ function mapStockRow(row) {
     unite: row.unite,
     quantiteActuelle,
     seuilAlerte,
-    prixUnitaire: Number(row.prix_unitaire || 0),
+    prixUnitaire: Number(row.prix_unitaire ?? row.prixUnitaire ?? 0),
     fournisseur: row.fournisseur || '',
     emplacement: row.emplacement || '',
-    dateExpiration: row.date_expiration,
-    dateCreationStock: row.date_creation_stock,
+    dateExpiration: row.date_expiration || row.dateExpiration || null,
+    dateCreationStock: row.date_creation_stock || row.dateCreationStock || null,
     notes: row.notes || '',
     enAlerte: quantiteActuelle <= seuilAlerte,
     mouvements: toArray(row.mouvements),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
   };
 }
 
@@ -186,7 +255,7 @@ router.post('/', async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    const created = await client.from('stocks').insert(payload).select('*').single();
+    const created = await insertStockCompat(client, payload);
     if (created.error) return res.status(400).json({ message: created.error.message });
 
     return res.status(201).json(mapStockRow(created.data));
