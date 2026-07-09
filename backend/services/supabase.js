@@ -20,7 +20,15 @@ function getAdminClient() {
 }
 
 function mapRole(role) {
-  return role === 'admin' || role === 'owner' ? 'admin' : 'utilisateur';
+  const value = (role || '').toString().toLowerCase().trim();
+  if (value === 'admin' || value === 'owner') return 'admin';
+  if (value === 'viewer') return 'viewer';
+  return 'agent';
+}
+
+function toAppRole(dbRole) {
+  const value = (dbRole || '').toString().toLowerCase().trim();
+  return value === 'admin' || value === 'owner' ? 'admin' : 'utilisateur';
 }
 
 function splitFullName(fullName = '') {
@@ -44,7 +52,7 @@ function toPublicUser(profile, emailOverride) {
     prenom,
     email: emailOverride || profile.email || '',
     telephone: profile.telephone || '',
-    role: mapRole(profile.role),
+    role: toAppRole(profile.role),
     permissions: Array.isArray(profile.permissions) ? profile.permissions : [],
     actif: profile.actif !== false,
     mustChangePassword: profile.must_change_password !== false,
@@ -70,6 +78,7 @@ async function logAudit(client, payload) {
 module.exports = {
   getAdminClient,
   mapRole,
+  toAppRole,
   mergeFullName,
   toPublicUser,
   logAudit,

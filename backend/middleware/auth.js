@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { getAdminClient } = require('../services/supabase');
+const { getAdminClient, toAppRole } = require('../services/supabase');
 
 function extractToken(req) {
   const auth = req.headers.authorization || '';
@@ -32,7 +32,7 @@ async function authenticate(req, res, next) {
       _id: profile.id,
       id: profile.id,
       email: profile.email || '',
-      role: profile.role === 'admin' ? 'admin' : 'utilisateur',
+      role: toAppRole(profile.role),
       permissions: Array.isArray(profile.permissions) ? profile.permissions : [],
       actif: profile.actif !== false,
       nom: profile.nom || '',
