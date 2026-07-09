@@ -21,14 +21,16 @@ function getAdminClient() {
 
 function mapRole(role) {
   const value = (role || '').toString().toLowerCase().trim();
-  if (value === 'admin' || value === 'owner') return 'admin';
+  if (value === 'admin' || value === 'owner' || value === 'administrateur') return 'admin';
   if (value === 'viewer') return 'viewer';
   return 'agent';
 }
 
 function toAppRole(dbRole) {
   const value = (dbRole || '').toString().toLowerCase().trim();
-  return value === 'admin' || value === 'owner' ? 'admin' : 'utilisateur';
+  return value === 'admin' || value === 'owner' || value === 'administrateur'
+    ? 'admin'
+    : 'utilisateur';
 }
 
 function splitFullName(fullName = '') {

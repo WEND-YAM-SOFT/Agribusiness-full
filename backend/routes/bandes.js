@@ -6,6 +6,94 @@ const { requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+function isMissingCategorieColumnError(error) {
+  const message = (error?.message || '').toString().toLowerCase();
+  return message.includes("could not find the 'categorie' column")
+    || (message.includes('categorie') && message.includes('schema cache'));
+}
+
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+function toLegacyTresoreriePayload(payload) {
+  const mapped = { ...payload };
+  if (Object.prototype.hasOwnProperty.call(mapped, 'company_id')) {
+    mapped.companyId = mapped.company_id;
+    delete mapped.company_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_nom')) {
+    mapped.quiNom = mapped.qui_nom;
+    delete mapped.qui_nom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_prenom')) {
+    mapped.quiPrenom = mapped.qui_prenom;
+    delete mapped.qui_prenom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'date_mouvement')) {
+    mapped.date = mapped.date_mouvement;
+    delete mapped.date_mouvement;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_type')) {
+    mapped.referenceType = mapped.reference_type;
+    delete mapped.reference_type;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_id')) {
+    mapped.referenceId = mapped.reference_id;
+    delete mapped.reference_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'externe_cle')) {
+    mapped.externeCle = mapped.externe_cle;
+    delete mapped.externe_cle;
+  }
+  return mapped;
+}
+
+function withCategoryHint(payload) {
+  const cloned = { ...payload };
+  const categoryHint = (cloned.categorie || '').toString().trim();
+  if (!categoryHint) return cloned;
+  const originalComment = (cloned.commentaire || '').toString().trim();
+  cloned.commentaire = `[Categorie: ${categoryHint}]${originalComment ? ` ${originalComment}` : ''}`;
+  return cloned;
+}
+
+async function insertTresorerieCompat(api, payload) {
+  let candidate = { ...payload };
+  let legacyAttempted = false;
+
+  for (let i = 0; i < 6; i += 1) {
+    const result = await api.from('tresorerie_mouvements').insert(candidate);
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+
+    if (!legacyAttempted && missingColumn.includes('_')) {
+      candidate = toLegacyTresoreriePayload(candidate);
+      legacyAttempted = true;
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    if (missingColumn === 'categorie') {
+      candidate = withCategoryHint(candidate);
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: 'Insertion tresorerie impossible: schema incompatible apres tentatives de fallback' },
+  };
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -432,7 +520,7 @@ router.post('/:id/suivi', async (req, res) => {
     const movementAmount = alimentationKg * Number(stockRes.data.prix_unitaire || 0);
     if (movementAmount > 0) {
       const userName = getUserName(req);
-      const financeSave = await api.from('tresorerie_mouvements').insert({
+      const financeSave = await insertTresorerieCompat(api, {
         company_id: companyId,
         nature: 'sortie',
         source: 'stock_sortie',
@@ -727,7 +815,7 @@ router.put('/:id/evenements-previsionnels/:eventId/terminer', async (req, res) =
       const montant = consommationQuantite * Number(stockRes.data.prix_unitaire || 0);
       if (montant > 0) {
         const userName = getUserName(req);
-        const finance = await api.from('tresorerie_mouvements').insert({
+        const finance = await insertTresorerieCompat(api, {
           company_id: companyId,
           nature: 'sortie',
           source: 'stock_sortie',

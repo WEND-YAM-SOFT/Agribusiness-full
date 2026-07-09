@@ -4,21 +4,121 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function isMissingCategorieColumnError(error) {
+  const message = (error?.message || '').toString().toLowerCase();
+  return message.includes("could not find the 'categorie' column")
+    || (message.includes('categorie') && message.includes('schema cache'));
+}
+
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+function toLegacyTresoreriePayload(payload) {
+  const mapped = { ...payload };
+  if (Object.prototype.hasOwnProperty.call(mapped, 'company_id')) {
+    mapped.companyId = mapped.company_id;
+    delete mapped.company_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_nom')) {
+    mapped.quiNom = mapped.qui_nom;
+    delete mapped.qui_nom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_prenom')) {
+    mapped.quiPrenom = mapped.qui_prenom;
+    delete mapped.qui_prenom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'date_mouvement')) {
+    mapped.date = mapped.date_mouvement;
+    delete mapped.date_mouvement;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_type')) {
+    mapped.referenceType = mapped.reference_type;
+    delete mapped.reference_type;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_id')) {
+    mapped.referenceId = mapped.reference_id;
+    delete mapped.reference_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'externe_cle')) {
+    mapped.externeCle = mapped.externe_cle;
+    delete mapped.externe_cle;
+  }
+  return mapped;
+}
+
+function withCategoryHint(payload) {
+  const cloned = { ...payload };
+  const categoryHint = (cloned.categorie || '').toString().trim();
+  if (!categoryHint) return cloned;
+  const originalComment = (cloned.commentaire || '').toString().trim();
+  cloned.commentaire = `[Categorie: ${categoryHint}]${originalComment ? ` ${originalComment}` : ''}`;
+  return cloned;
+}
+
+async function insertTresorerieCompat(api, payload) {
+  let candidate = { ...payload };
+  let legacyAttempted = false;
+
+  for (let i = 0; i < 6; i += 1) {
+    const result = await api
+      .from('tresorerie_mouvements')
+      .insert(candidate)
+      .select('*')
+      .single();
+
+    if (!result.error) {
+      if (result.data) {
+        result.data = { ...result.data, categorie: result.data.categorie || candidate.categorie || '' };
+      }
+      return result;
+    }
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) {
+      return result;
+    }
+
+    if (!legacyAttempted && missingColumn.includes('_')) {
+      candidate = toLegacyTresoreriePayload(candidate);
+      legacyAttempted = true;
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    if (missingColumn === 'categorie') {
+      candidate = withCategoryHint(candidate);
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: 'Insertion tresorerie impossible: schema incompatible apres tentatives de fallback' },
+  };
+}
+
 function mapMouvement(row) {
   return {
     _id: row.id,
     nature: row.nature,
     source: row.source,
-    quiNom: row.qui_nom || '',
-    quiPrenom: row.qui_prenom || '',
-    categorie: row.categorie || '',
+    quiNom: row.qui_nom || row.quiNom || '',
+    quiPrenom: row.qui_prenom || row.quiPrenom || '',
+    categorie: row.categorie || row.category || '',
     type: row.type || '',
     montant: Number(row.montant || 0),
-    date: row.date_mouvement,
+    date: row.date_mouvement || row.date,
     commentaire: row.commentaire || '',
-    referenceType: row.reference_type || null,
-    referenceId: row.reference_id || null,
-    externeCle: row.externe_cle || null,
+    referenceType: row.reference_type || row.referenceType || null,
+    referenceId: row.reference_id || row.referenceId || null,
+    externeCle: row.externe_cle || row.externeCle || null,
     createdAt: row.created_at,
   };
 }
@@ -173,23 +273,19 @@ router.post('/depenses', async (req, res) => {
       });
     }
 
-    const { data, error } = await api
-      .from('tresorerie_mouvements')
-      .insert({
-        company_id: companyId,
-        nature: 'sortie',
-        source: 'depense',
-        qui_nom: quiNom,
-        qui_prenom: quiPrenom,
-        categorie,
-        type,
-        montant,
-        date_mouvement: date.toISOString(),
-        commentaire,
-        reference_type: 'manuel',
-      })
-      .select('*')
-      .single();
+    const { data, error } = await insertTresorerieCompat(api, {
+      company_id: companyId,
+      nature: 'sortie',
+      source: 'depense',
+      qui_nom: quiNom,
+      qui_prenom: quiPrenom,
+      categorie,
+      type,
+      montant,
+      date_mouvement: date.toISOString(),
+      commentaire,
+      reference_type: 'manuel',
+    });
 
     if (error) return res.status(400).json({ message: error.message });
     return res.status(201).json(mapMouvement(data));
@@ -215,23 +311,19 @@ router.post('/approvisionnements', async (req, res) => {
       });
     }
 
-    const { data, error } = await api
-      .from('tresorerie_mouvements')
-      .insert({
-        company_id: companyId,
-        nature: 'entree',
-        source: 'approvisionnement',
-        qui_nom: quiNom,
-        qui_prenom: quiPrenom,
-        categorie: 'caisse',
-        type: 'approvisionnement',
-        montant,
-        date_mouvement: date.toISOString(),
-        commentaire,
-        reference_type: 'manuel',
-      })
-      .select('*')
-      .single();
+    const { data, error } = await insertTresorerieCompat(api, {
+      company_id: companyId,
+      nature: 'entree',
+      source: 'approvisionnement',
+      qui_nom: quiNom,
+      qui_prenom: quiPrenom,
+      categorie: 'caisse',
+      type: 'approvisionnement',
+      montant,
+      date_mouvement: date.toISOString(),
+      commentaire,
+      reference_type: 'manuel',
+    });
 
     if (error) return res.status(400).json({ message: error.message });
     return res.status(201).json(mapMouvement(data));

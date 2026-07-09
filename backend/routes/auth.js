@@ -207,6 +207,23 @@ router.post('/connexion', async (req, res) => {
       profile = inserted.data;
     }
 
+    // Auto-heal legacy profiles: ensure company_id exists and role is normalized.
+    if (!profile.company_id) {
+      const companyId = await getOrCreateDefaultCompanyId(client);
+      const normalizedRole = mapRole(profile.role);
+      const patched = await client
+        .from('profiles')
+        .update({ company_id: companyId, role: normalizedRole })
+        .eq('id', login.data.user.id)
+        .select('*')
+        .single();
+
+      if (patched.error) {
+        return res.status(400).json({ message: patched.error.message });
+      }
+      profile = patched.data;
+    }
+
     const metadata = login.data.user.user_metadata || {};
     if (metadata.actif === false) {
       return res.status(403).json({ message: 'Compte désactivé' });
