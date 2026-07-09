@@ -231,9 +231,17 @@ alter table public.crm_taches enable row level security;
 
 -- Users can only access rows from their own company.
 drop policy if exists profiles_select_own_company on public.profiles;
-create policy profiles_select_own_company on public.profiles
+drop policy if exists profiles_select_self on public.profiles;
+drop policy if exists profiles_update_self on public.profiles;
+create policy profiles_select_self on public.profiles
 for select using (
-  company_id = (select p.company_id from public.profiles p where p.id = auth.uid())
+  id = auth.uid()
+);
+create policy profiles_update_self on public.profiles
+for update using (
+  id = auth.uid()
+) with check (
+  id = auth.uid()
 );
 
 drop policy if exists clients_all_own_company on public.clients;
