@@ -106,7 +106,12 @@ async function buildPublicUser(client, authUser, profile) {
 
 router.post('/inscription', async (req, res) => {
   try {
-    await ensureInitialAdmin();
+    try {
+      await ensureInitialAdmin();
+    } catch (bootstrapError) {
+      // Do not block signup if bootstrap admin creation fails in production env.
+      console.warn('ensureInitialAdmin failed during inscription:', bootstrapError.message);
+    }
     const client = getAdminClient();
 
     const email = (req.body.email || '').trim().toLowerCase();
@@ -162,7 +167,12 @@ router.post('/inscription', async (req, res) => {
 
 router.post('/connexion', async (req, res) => {
   try {
-    await ensureInitialAdmin();
+    try {
+      await ensureInitialAdmin();
+    } catch (bootstrapError) {
+      // Existing users must still be able to log in even if bootstrap helper fails.
+      console.warn('ensureInitialAdmin failed during connexion:', bootstrapError.message);
+    }
     const client = getAdminClient();
 
     const email = (req.body.email || '').trim().toLowerCase();
