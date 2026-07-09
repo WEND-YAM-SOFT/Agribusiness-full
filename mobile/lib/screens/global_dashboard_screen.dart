@@ -44,7 +44,31 @@ class _GlobalDashboardScreenState extends State<GlobalDashboardScreen> {
           final crm = provider.crm;
 
           if (g.isEmpty) {
-            return const Center(child: Text('Aucune donnée disponible'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Aucune donnée disponible'),
+                    if ((provider.lastError ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        provider.lastError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => provider.chargerDashboards(),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           return RefreshIndicator(

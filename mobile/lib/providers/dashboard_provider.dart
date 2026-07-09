@@ -11,6 +11,7 @@ class DashboardProvider with ChangeNotifier {
   Map<String, dynamic> _crm = {};
   List<Map<String, dynamic>> _bandes = [];
   bool _isLoading = false;
+  String? _lastError;
   bool _filtresRestaures = false;
   String _period = 'mois';
   String _selectedBandeId = '';
@@ -19,6 +20,7 @@ class DashboardProvider with ChangeNotifier {
   Map<String, dynamic> get global => _global;
   Map<String, dynamic> get crm => _crm;
   List<Map<String, dynamic>> get bandes => _bandes;
+  String? get lastError => _lastError;
   List<String> get batiments => _bandes
       .map((b) => (b['batiment'] ?? '').toString())
       .where((b) => b.isNotEmpty)
@@ -40,6 +42,7 @@ class DashboardProvider with ChangeNotifier {
     }
 
     _isLoading = true;
+    _lastError = null;
     if (period != null) {
       _period = period;
     }
@@ -51,24 +54,40 @@ class DashboardProvider with ChangeNotifier {
     }
     notifyListeners();
 
-    try {
-      if (_bandes.isEmpty) {
+    if (_bandes.isEmpty) {
+      try {
         final actives = await ApiService.getBandesActives();
         final historiques = await ApiService.getBandesHistorique();
         _bandes = [...actives, ...historiques]
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
+      } catch (e) {
+        _lastError = e.toString().replaceFirst('Exception: ', '').trim();
+        debugPrint('Erreur chargement bandes dashboard: $e');
       }
-      _validerFiltresSelectionnes();
-      await _sauvegarderFiltres();
+    }
+
+    _validerFiltresSelectionnes();
+    await _sauvegarderFiltres();
+
+    try {
       _global = await ApiService.getGlobalDashboard(
         period: _period,
         bandeId: _selectedBandeId.isEmpty ? null : _selectedBandeId,
         batiment: _selectedBatiment.isEmpty ? null : _selectedBatiment,
       );
+    } catch (e) {
+      _global = {};
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
+      debugPrint('Erreur dashboard global: $e');
+    }
+
+    try {
       _crm = await ApiService.getCrmDashboard();
     } catch (e) {
-      debugPrint('Erreur dashboard: $e');
+      _crm = {};
+      _lastError ??= e.toString().replaceFirst('Exception: ', '').trim();
+      debugPrint('Erreur dashboard CRM: $e');
     }
 
     _isLoading = false;
