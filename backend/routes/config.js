@@ -1,32 +1,57 @@
 const express = require('express');
-const AppConfig = require('../models/AppConfig');
-const AuditLog = require('../models/AuditLog');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { getAdminClient, logAudit } = require('../services/supabase');
 
 const router = express.Router();
 
 router.use(authenticate, requireRole('admin'));
 
-async function ensureConfig() {
-  let config = await AppConfig.findOne({ key: 'main' });
-  if (!config) {
-    config = await AppConfig.create({ key: 'main' });
-  }
-  return config;
+const DEFAULT_REFERENCES = {
+  poulet_chair: { dureeJours: 42, poidsFinalG: 2500, consoTotaleKgParTete: 4.2, courbeTheorique: [] },
+  poule_pondeuse: { dureeJours: 140, poidsFinalG: 1800, consoTotaleKgParTete: 14.0, courbeTheorique: [] },
+  dinde: { dureeJours: 90, poidsFinalG: 7000, consoTotaleKgParTete: 18.0, courbeTheorique: [] },
+  canard: { dureeJours: 50, poidsFinalG: 3200, consoTotaleKgParTete: 6.0, courbeTheorique: [] },
+  autre: { dureeJours: 45, poidsFinalG: 2500, consoTotaleKgParTete: 5.0, courbeTheorique: [] },
+};
+
+function defaultConfig() {
+  return {
+    key: 'main',
+    nomApplication: 'AgriBusiness',
+    devise: 'FCFA',
+    langue: 'fr',
+    sessionTimeoutMinutes: 30,
+    theme: 'light',
+    notificationsEmail: false,
+    referencesTheoriques: DEFAULT_REFERENCES,
+    notes: '',
+  };
+}
+
+async function ensureConfig(client) {
+  const current = await client.from('app_config').select('*').eq('key', 'main').maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (current.data) return current.data;
+
+  const created = await client.from('app_config').insert(defaultConfig()).select('*').single();
+  if (created.error) throw new Error(created.error.message);
+  return created.data;
 }
 
 router.get('/', async (req, res) => {
   try {
-    const config = await ensureConfig();
-    res.json(config);
+    const client = getAdminClient();
+    const config = await ensureConfig(client);
+    return res.json(config);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
 router.put('/', async (req, res) => {
   try {
-    const config = await ensureConfig();
+    const client = getAdminClient();
+    const existing = await ensureConfig(client);
 
     const allowedFields = [
       'nomApplication',
@@ -36,56 +61,73 @@ router.put('/', async (req, res) => {
       'theme',
       'notificationsEmail',
       'referencesTheoriques',
-      'notes'
+      'notes',
     ];
 
+    const updates = {};
     for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        config[field] = req.body[field];
-      }
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
     }
 
-    await config.save();
+    const saved = await client
+      .from('app_config')
+      .update(updates)
+      .eq('key', existing.key)
+      .select('*')
+      .single();
 
-    await AuditLog.create({
-      userId: req.user._id,
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+
+    await logAudit(client, {
+      userId: req.user.id || req.user._id,
       userEmail: req.user.email,
       action: 'config.update',
       targetType: 'AppConfig',
-      targetId: config._id,
+      targetId: existing.key,
       metadata: { updatedFields: Object.keys(req.body || {}) },
-      ip: req.ip || ''
+      ip: '',
     });
 
-    res.json(config);
+    return res.json(saved.data);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.get('/audit', async (req, res) => {
   try {
-    const logs = await AuditLog.find().sort({ createdAt: -1 }).limit(300);
-    res.json(logs);
+    const client = getAdminClient();
+    const logs = await client
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (logs.error) return res.status(500).json({ message: logs.error.message });
+    return res.json(logs.data || []);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
 router.delete('/audit', async (req, res) => {
   try {
-    await AuditLog.deleteMany({});
-    await AuditLog.create({
-      userId: req.user._id,
+    const client = getAdminClient();
+    const cleared = await client.from('audit_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (cleared.error) return res.status(500).json({ message: cleared.error.message });
+
+    await logAudit(client, {
+      userId: req.user.id || req.user._id,
       userEmail: req.user.email,
       action: 'audit.clear',
       targetType: 'AuditLog',
+      targetId: null,
       metadata: { cleared: true },
-      ip: req.ip || ''
+      ip: '',
     });
-    res.json({ message: 'Audit effacé' });
+
+    return res.json({ message: 'Audit effacé' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 

@@ -91,12 +91,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextButton(
                         onPressed: _showForgotPasswordDialog,
                         child: const Text('Mot de passe oublié ?'),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Compte admin par défaut: admin@agribusiness.local / Admin@123',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                       )
                     ],
                   ),

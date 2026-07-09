@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
 require('dotenv').config();
 const { authenticate } = require('./middleware/auth');
 
@@ -10,11 +9,6 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-
-// Connexion MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connecté à MongoDB'))
-  .catch(err => console.error('Erreur connexion MongoDB:', err));
 
 // Routes
 const bandesRoutes = require('./routes/bandes');

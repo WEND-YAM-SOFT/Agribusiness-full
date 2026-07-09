@@ -1,10 +1,33 @@
 const express = require('express');
+const { getAdminClient } = require('../services/supabase');
+const { getCompanyIdForUser } = require('../services/company_scope');
+
 const router = express.Router();
-const Alerte = require('../models/Alerte');
-const Stock = require('../models/Stock');
-const Bande = require('../models/Bande');
-const Commande = require('../models/Commande');
-const TacheCRM = require('../models/TacheCRM');
+
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function mapAlerteRow(row, bandeMap = new Map()) {
+  const bandeId = row.bande_id || null;
+  return {
+    _id: row.id,
+    titre: row.titre,
+    message: row.message,
+    type: row.type,
+    dateEcheance: row.date_echeance,
+    bandeId: bandeId && bandeMap.has(bandeId)
+      ? { _id: bandeId, nom: bandeMap.get(bandeId) }
+      : bandeId,
+    statut: row.statut || 'active',
+    recurrence: row.recurrence || 'aucune',
+    priorite: row.priorite || 'moyenne',
+    source: row.source || 'todo',
+    automatique: row.automatique === true,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 function getPeriodBounds(period) {
   const now = new Date();
@@ -35,109 +58,120 @@ function getPeriodBounds(period) {
   }
 }
 
-// Obtenir toutes les alertes actives
+async function getBandeNameMap(api, companyId) {
+  const b = await api.from('bandes').select('id,nom').eq('company_id', companyId);
+  if (b.error) return new Map();
+  return new Map((b.data || []).map((x) => [x.id, x.nom || '']));
+}
+
 router.get('/actives', async (req, res) => {
   try {
-    const query = { statut: 'active' };
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    let query = api.from('alertes').select('*').eq('company_id', companyId).eq('statut', 'active').eq('automatique', false);
     const period = (req.query.period || 'all').toString().toLowerCase();
     const bounds = getPeriodBounds(period);
     if (bounds) {
-      query.dateEcheance = { $gte: bounds.start, $lte: bounds.end };
+      query = query.gte('date_echeance', bounds.start.toISOString()).lte('date_echeance', bounds.end.toISOString());
     }
 
-    const alertes = await Alerte.find(query)
-      .populate('bandeId', 'nom')
-      .sort({ dateEcheance: 1 });
-    res.json(alertes);
+    const result = await query.order('date_echeance', { ascending: true });
+    if (result.error) return res.status(500).json({ message: result.error.message });
+
+    const bandeMap = await getBandeNameMap(api, companyId);
+    return res.json((result.data || []).map((row) => mapAlerteRow(row, bandeMap)));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Alertes automatiques agrégées depuis les autres modules
 router.get('/automatiques', async (req, res) => {
   try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
     const maintenant = new Date();
     const alertes = [];
 
-    // 1) Stocks en seuil mini (aliment/medicament/vaccin)
-    const stocksBas = await Stock.find({
-      $expr: { $lte: ['$quantiteActuelle', '$seuilAlerte'] }
-    }).select('nom categorie quantiteActuelle seuilAlerte unite');
+    const stocksRes = await api.from('stocks').select('id,nom,categorie,quantite_actuelle,seuil_alerte,unite').eq('company_id', companyId);
+    if (stocksRes.error) return res.status(500).json({ message: stocksRes.error.message });
 
-    for (const s of stocksBas) {
+    for (const s of stocksRes.data || []) {
+      const current = Number(s.quantite_actuelle || 0);
+      const seuil = Number(s.seuil_alerte || 0);
+      if (current > seuil) continue;
+
       const categorie = (s.categorie || '').toLowerCase();
       const nom = (s.nom || '').toLowerCase();
       const isVaccin = nom.includes('vaccin');
-      const isTarget = categorie === 'aliment' || categorie === 'medicament' || isVaccin;
-      if (!isTarget) continue;
+      if (!['aliment', 'medicament'].includes(categorie) && !isVaccin) continue;
 
       alertes.push({
-        id: `stock-${s._id}`,
+        id: `stock-${s.id}`,
         titre: `Stock bas: ${s.nom}`,
-        message: `Niveau ${s.quantiteActuelle} ${s.unite} (seuil ${s.seuilAlerte} ${s.unite})`,
+        message: `Niveau ${current} ${s.unite || ''} (seuil ${seuil} ${s.unite || ''})`,
         type: 'stock_bas',
         priorite: 'haute',
-        dateEcheance: maintenant,
+        dateEcheance: maintenant.toISOString(),
         source: 'stock',
         automatique: true,
       });
     }
 
-    // 2) Alertes sanitaires prévues sur bandes (approche échéance)
-    const bandes = await Bande.find({ statut: 'ouverte' }).select('nom evenementsSante evenementsPrevisionnels');
-    for (const b of bandes) {
-      const events = Array.isArray(b.evenementsSante) ? b.evenementsSante : [];
+    const bandesRes = await api.from('bandes').select('id,nom,evenements_sante,evenements_previsionnels,statut').eq('company_id', companyId).eq('statut', 'ouverte');
+    if (bandesRes.error) return res.status(500).json({ message: bandesRes.error.message });
+
+    for (const b of bandesRes.data || []) {
+      const events = toArray(b.evenements_sante);
       for (const e of events) {
         if (!e.date) continue;
         const d = new Date(e.date);
-        if (Number.isNaN(d.getTime())) continue;
-        if (d < maintenant) continue;
+        if (Number.isNaN(d.getTime()) || d < maintenant) continue;
         const type = (e.type || '').toLowerCase();
-        const isSanitary = ['vaccination', 'traitement', 'autre'].includes(type) ||
-          (e.description || '').toLowerCase().includes('controle');
+        const isSanitary = ['vaccination', 'traitement', 'autre'].includes(type) || (e.description || '').toLowerCase().includes('controle');
         if (!isSanitary) continue;
 
         alertes.push({
-          id: `sanitaire-${b._id}-${e._id}`,
+          id: `sanitaire-${b.id}-${e._id || d.getTime()}`,
           titre: `Événement sanitaire: ${b.nom}`,
           message: e.description || 'Événement sanitaire planifié',
           type: 'vaccination',
           priorite: 'moyenne',
-          dateEcheance: d,
+          dateEcheance: d.toISOString(),
           source: 'sanitaire',
           automatique: true,
         });
       }
 
-      const planned = Array.isArray(b.evenementsPrevisionnels) ? b.evenementsPrevisionnels : [];
+      const planned = toArray(b.evenements_previsionnels);
       for (const p of planned) {
         if (!p.datePrevue || p.statut === 'termine') continue;
         const d = new Date(p.datePrevue);
         if (Number.isNaN(d.getTime())) continue;
-
         const msToDue = d.getTime() - maintenant.getTime();
-        const withinWindow = msToDue <= (2 * 24 * 60 * 60 * 1000);
-        if (!withinWindow) continue;
+        if (msToDue > (2 * 24 * 60 * 60 * 1000)) continue;
 
         const overdue = msToDue < 0;
         alertes.push({
-          id: `prevision-${b._id}-${p._id}`,
+          id: `prevision-${b.id}-${p._id || d.getTime()}`,
           titre: `${overdue ? 'Événement en retard' : 'Événement prévu'}: ${b.nom}`,
           message: p.description || 'Événement planifié',
           type: p.type || 'autre',
           priorite: p.priorite || (overdue ? 'haute' : 'moyenne'),
-          dateEcheance: d,
+          dateEcheance: d.toISOString(),
           source: 'planification',
           automatique: true,
-          bandeId: b._id,
+          bandeId: b.id,
           eventId: p._id,
         });
       }
     }
 
-    // 3) Alertes commerciales
-    const commandesApreparer = await Commande.countDocuments({ statut: { $in: ['confirmee', 'en_preparation'] } });
+    const commandesRes = await api.from('commandes').select('id,statut,livraisons').eq('company_id', companyId);
+    if (commandesRes.error) return res.status(500).json({ message: commandesRes.error.message });
+
+    const commandes = commandesRes.data || [];
+    const commandesApreparer = commandes.filter((c) => ['confirmee', 'en_preparation'].includes(c.statut)).length;
     if (commandesApreparer > 0) {
       alertes.push({
         id: 'commercial-prepare',
@@ -145,18 +179,17 @@ router.get('/automatiques', async (req, res) => {
         message: `${commandesApreparer} commande(s) à préparer`,
         type: 'vente',
         priorite: 'haute',
-        dateEcheance: maintenant,
+        dateEcheance: maintenant.toISOString(),
         source: 'commercial',
         automatique: true,
       });
     }
 
-    const commandesAlivrer = await Commande.countDocuments({
-      $or: [
-        { statut: { $in: ['confirmee', 'en_preparation', 'payee'] } },
-        { 'livraisons.statutLivraison': { $in: ['planifiee', 'en_cours'] } }
-      ]
-    });
+    const commandesAlivrer = commandes.filter((c) => {
+      if (['confirmee', 'en_preparation', 'payee'].includes(c.statut)) return true;
+      return toArray(c.livraisons).some((l) => ['planifiee', 'en_cours'].includes(l.statutLivraison));
+    }).length;
+
     if (commandesAlivrer > 0) {
       alertes.push({
         id: 'commercial-livraison',
@@ -164,152 +197,220 @@ router.get('/automatiques', async (req, res) => {
         message: `${commandesAlivrer} commande(s) à livrer`,
         type: 'vente',
         priorite: 'haute',
-        dateEcheance: maintenant,
+        dateEcheance: maintenant.toISOString(),
         source: 'commercial',
         automatique: true,
       });
     }
 
-    const relancesClients = await TacheCRM.find({
-      statut: { $in: ['a_faire', 'en_cours'] },
-      dateEcheance: { $lte: new Date(maintenant.getTime() + 2 * 24 * 60 * 60 * 1000) },
-    })
-      .populate('clientId', 'nom prenom telephone')
-      .sort({ dateEcheance: 1 });
-    for (const tache of relancesClients) {
-      const clientNom = tache.clientId
-        ? `${tache.clientId.prenom || ''} ${tache.clientId.nom || ''}`.trim()
-        : '';
-      const overdue = new Date(tache.dateEcheance).getTime() < maintenant.getTime();
+    const dueDate = new Date(maintenant.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
+    const tachesRes = await api
+      .from('crm_taches')
+      .select('id,titre,description,date_echeance,priorite,statut,client_id')
+      .eq('company_id', companyId)
+      .in('statut', ['a_faire', 'en_cours'])
+      .lte('date_echeance', dueDate)
+      .order('date_echeance', { ascending: true });
+    if (tachesRes.error) return res.status(500).json({ message: tachesRes.error.message });
+
+    let clientMap = new Map();
+    const clientIds = [...new Set((tachesRes.data || []).map((t) => t.client_id).filter(Boolean))];
+    if (clientIds.length) {
+      const clientRes = await api.from('clients').select('id,nom,prenom').eq('company_id', companyId).in('id', clientIds);
+      if (!clientRes.error) clientMap = new Map((clientRes.data || []).map((c) => [c.id, c]));
+    }
+
+    for (const tache of tachesRes.data || []) {
+      const cl = tache.client_id ? clientMap.get(tache.client_id) : null;
+      const clientNom = cl ? `${cl.prenom || ''} ${cl.nom || ''}`.trim() : '';
+      const overdue = new Date(tache.date_echeance).getTime() < maintenant.getTime();
+
       alertes.push({
-        id: `crm-task-${tache._id}`,
+        id: `crm-task-${tache.id}`,
         titre: tache.titre || 'Relance CRM',
-        message: [
-          clientNom ? `Client: ${clientNom}` : null,
-          tache.description || null,
-        ].filter(Boolean).join(' • '),
+        message: [clientNom ? `Client: ${clientNom}` : null, tache.description || null].filter(Boolean).join(' • '),
         type: 'vente',
         priorite: tache.priorite || (overdue ? 'haute' : 'moyenne'),
-        dateEcheance: tache.dateEcheance,
+        dateEcheance: tache.date_echeance,
         source: 'crm_tache',
         automatique: true,
       });
     }
 
-    alertes.sort((a, b) => new Date(a.dateEcheance) - new Date(b.dateEcheance));
-    res.json(alertes);
+    alertes.sort((a, b) => new Date(a.dateEcheance).getTime() - new Date(b.dateEcheance).getTime());
+    return res.json(alertes);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Obtenir alertes du jour
 router.get('/aujourdhui', async (req, res) => {
   try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
     const debut = new Date();
     debut.setHours(0, 0, 0, 0);
     const fin = new Date();
     fin.setHours(23, 59, 59, 999);
 
-    const alertes = await Alerte.find({
-      statut: 'active',
-      dateEcheance: { $gte: debut, $lte: fin }
-    }).populate('bandeId', 'nom');
-    res.json(alertes);
+    const result = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('statut', 'active')
+      .gte('date_echeance', debut.toISOString())
+      .lte('date_echeance', fin.toISOString())
+      .order('date_echeance', { ascending: true });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    const bandeMap = await getBandeNameMap(api, companyId);
+    return res.json((result.data || []).map((row) => mapAlerteRow(row, bandeMap)));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Obtenir alertes en retard
 router.get('/retard', async (req, res) => {
   try {
-    const alertes = await Alerte.find({
-      statut: 'active',
-      dateEcheance: { $lt: new Date() }
-    }).populate('bandeId', 'nom');
-    res.json(alertes);
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+    const nowIso = new Date().toISOString();
+
+    const result = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('statut', 'active')
+      .lt('date_echeance', nowIso)
+      .order('date_echeance', { ascending: true });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    const bandeMap = await getBandeNameMap(api, companyId);
+    return res.json((result.data || []).map((row) => mapAlerteRow(row, bandeMap)));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
 router.get('/historique', async (req, res) => {
   try {
-    const alertes = await Alerte.find({
-      statut: { $in: ['faite', 'ignoree'] },
-      automatique: { $ne: true },
-    })
-      .populate('bandeId', 'nom')
-      .sort({ updatedAt: -1, dateEcheance: -1 });
-    res.json(alertes);
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const result = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('statut', ['faite', 'ignoree'])
+      .eq('automatique', false)
+      .order('updated_at', { ascending: false })
+      .order('date_echeance', { ascending: false });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    const bandeMap = await getBandeNameMap(api, companyId);
+    return res.json((result.data || []).map((row) => mapAlerteRow(row, bandeMap)));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
 router.get('/automatiques/historique', async (req, res) => {
   try {
-    const alertes = await Alerte.find({
-      statut: { $in: ['faite', 'ignoree'] },
-      automatique: true,
-    })
-      .populate('bandeId', 'nom')
-      .sort({ updatedAt: -1, dateEcheance: -1 });
-    res.json(alertes);
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const result = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('statut', ['faite', 'ignoree'])
+      .eq('automatique', true)
+      .order('updated_at', { ascending: false })
+      .order('date_echeance', { ascending: false });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    const bandeMap = await getBandeNameMap(api, companyId);
+    return res.json((result.data || []).map((row) => mapAlerteRow(row, bandeMap)));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Créer une alerte
 router.post('/', async (req, res) => {
-  const alerte = new Alerte({
-    titre: req.body.titre,
-    message: req.body.message,
-    type: req.body.type,
-    dateEcheance: req.body.dateEcheance,
-    bandeId: req.body.bandeId,
-    recurrence: req.body.recurrence,
-    priorite: req.body.priorite,
-    source: req.body.source || 'todo',
-    automatique: req.body.automatique === true,
-  });
-
   try {
-    const nouvelleAlerte = await alerte.save();
-    res.status(201).json(nouvelleAlerte);
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const payload = {
+      company_id: companyId,
+      titre: req.body.titre,
+      message: req.body.message,
+      type: req.body.type,
+      date_echeance: req.body.dateEcheance,
+      bande_id: req.body.bandeId || null,
+      recurrence: req.body.recurrence || 'aucune',
+      priorite: req.body.priorite || 'moyenne',
+      source: req.body.source || 'todo',
+      automatique: req.body.automatique === true,
+      statut: req.body.statut || 'active',
+      updated_at: new Date().toISOString(),
+    };
+
+    const created = await api.from('alertes').insert(payload).select('*').single();
+    if (created.error) return res.status(400).json({ message: created.error.message });
+
+    return res.status(201).json(mapAlerteRow(created.data));
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
-// Marquer une alerte comme faite
 router.put('/:id/fait', async (req, res) => {
   try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
     if (req.params.id.startsWith('crm-task-')) {
       const tacheId = req.params.id.replace('crm-task-', '');
-      const tache = await TacheCRM.findById(tacheId);
-      if (!tache) return res.status(404).json({ message: 'Tâche CRM non trouvée' });
-      if (tache.statut === 'terminee') {
+      const tacheRes = await api.from('crm_taches').select('*').eq('company_id', companyId).eq('id', tacheId).maybeSingle();
+      if (tacheRes.error) return res.status(400).json({ message: tacheRes.error.message });
+      if (!tacheRes.data) return res.status(404).json({ message: 'Tâche CRM non trouvée' });
+
+      if (tacheRes.data.statut === 'terminee') {
         return res.json({ id: req.params.id, source: 'crm_tache', alreadyDone: true });
       }
-      tache.statut = 'terminee';
-      const tacheMAJ = await tache.save();
 
-      await Alerte.create({
-        titre: tache.titre || 'Relance CRM',
-        message: tache.description || 'Tâche CRM terminée',
-        type: 'vente',
-        dateEcheance: tache.dateEcheance || new Date(),
-        statut: 'faite',
-        recurrence: 'aucune',
-        priorite: tache.priorite || 'moyenne',
-        source: 'crm_tache',
-        automatique: true,
-      });
+      const updated = await api
+        .from('crm_taches')
+        .update({ statut: 'terminee', updated_at: new Date().toISOString() })
+        .eq('company_id', companyId)
+        .eq('id', tacheId)
+        .select('*')
+        .single();
 
-      return res.json({ id: req.params.id, source: 'crm_tache', tache: tacheMAJ });
+      if (updated.error) return res.status(400).json({ message: updated.error.message });
+
+      const archive = await api
+        .from('alertes')
+        .insert({
+          company_id: companyId,
+          titre: tacheRes.data.titre || 'Relance CRM',
+          message: tacheRes.data.description || 'Tâche CRM terminée',
+          type: 'vente',
+          date_echeance: tacheRes.data.date_echeance || new Date().toISOString(),
+          statut: 'faite',
+          recurrence: 'aucune',
+          priorite: tacheRes.data.priorite || 'moyenne',
+          source: 'crm_tache',
+          automatique: true,
+          updated_at: new Date().toISOString(),
+        })
+        .select('*')
+        .single();
+
+      if (archive.error) return res.status(400).json({ message: archive.error.message });
+      return res.json({ id: req.params.id, source: 'crm_tache', tache: updated.data });
     }
 
     if (
@@ -319,48 +420,73 @@ router.put('/:id/fait', async (req, res) => {
       req.params.id.startsWith('commercial-')
     ) {
       const now = new Date();
-      const archive = await Alerte.create({
-        titre: req.body.titre || 'Alerte automatique traitée',
-        message: req.body.message || `Alerte ${req.params.id} marquée faite`,
-        type: req.body.type || 'autre',
-        dateEcheance: req.body.dateEcheance ? new Date(req.body.dateEcheance) : now,
-        statut: 'faite',
-        recurrence: 'aucune',
-        priorite: req.body.priorite || 'moyenne',
-        source: req.body.source || 'automatique',
-        automatique: true,
-      });
-      return res.json({ id: req.params.id, source: 'automatique', archive });
+      const archive = await api
+        .from('alertes')
+        .insert({
+          company_id: companyId,
+          titre: req.body.titre || 'Alerte automatique traitée',
+          message: req.body.message || `Alerte ${req.params.id} marquée faite`,
+          type: req.body.type || 'autre',
+          date_echeance: req.body.dateEcheance ? new Date(req.body.dateEcheance).toISOString() : now.toISOString(),
+          statut: 'faite',
+          recurrence: 'aucune',
+          priorite: req.body.priorite || 'moyenne',
+          source: req.body.source || 'automatique',
+          automatique: true,
+          updated_at: new Date().toISOString(),
+        })
+        .select('*')
+        .single();
+
+      if (archive.error) return res.status(400).json({ message: archive.error.message });
+      return res.json({ id: req.params.id, source: 'automatique', archive: mapAlerteRow(archive.data) });
     }
 
-    const alerte = await Alerte.findById(req.params.id);
-    if (!alerte) return res.status(404).json({ message: 'Alerte non trouvée' });
-    alerte.statut = 'faite';
-    const alerteMAJ = await alerte.save();
-    res.json(alerteMAJ);
+    const updated = await api
+      .from('alertes')
+      .update({ statut: 'faite', updated_at: new Date().toISOString() })
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('*')
+      .maybeSingle();
+
+    if (updated.error) return res.status(400).json({ message: updated.error.message });
+    if (!updated.data) return res.status(404).json({ message: 'Alerte non trouvée' });
+    return res.json(mapAlerteRow(updated.data));
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.delete('/historique/all', async (req, res) => {
   try {
-    const result = await Alerte.deleteMany({ statut: { $in: ['faite', 'ignoree'] }, automatique: { $ne: true } });
-    res.json({ message: 'Historique supprimé', deletedCount: result.deletedCount || 0 });
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const deleted = await api
+      .from('alertes')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('automatique', false)
+      .in('statut', ['faite', 'ignoree']);
+
+    if (deleted.error) return res.status(500).json({ message: deleted.error.message });
+    return res.json({ message: 'Historique supprimé', deletedCount: 0 });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Supprimer une alerte
 router.delete('/:id', async (req, res) => {
   try {
-    const alerte = await Alerte.findById(req.params.id);
-    if (!alerte) return res.status(404).json({ message: 'Alerte non trouvée' });
-    await alerte.deleteOne();
-    res.json({ message: 'Alerte supprimée' });
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const deleted = await api.from('alertes').delete().eq('company_id', companyId).eq('id', req.params.id);
+    if (deleted.error) return res.status(500).json({ message: deleted.error.message });
+    return res.json({ message: 'Alerte supprimée' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 

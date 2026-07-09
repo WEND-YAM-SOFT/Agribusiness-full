@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const Utilisateur = require('../models/Utilisateur');
+const { getAdminClient } = require('../services/supabase');
 
 function extractToken(req) {
   const auth = req.headers.authorization || '';
@@ -13,13 +13,32 @@ async function authenticate(req, res, next) {
     if (!token) return res.status(401).json({ message: 'Authentification requise' });
 
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'dev_secret_change_me');
-    const user = await Utilisateur.findById(payload.id).select('-motDePasse');
+    const client = getAdminClient();
+    const { data: profile, error } = await client
+      .from('profiles')
+      .select('*')
+      .eq('id', payload.id)
+      .maybeSingle();
 
-    if (!user || !user.actif) {
+    if (error) {
       return res.status(401).json({ message: 'Session invalide' });
     }
 
-    req.user = user;
+    if (!profile || profile.actif === false) {
+      return res.status(401).json({ message: 'Session invalide' });
+    }
+
+    req.user = {
+      _id: profile.id,
+      id: profile.id,
+      email: profile.email || '',
+      role: profile.role === 'admin' ? 'admin' : 'utilisateur',
+      permissions: Array.isArray(profile.permissions) ? profile.permissions : [],
+      actif: profile.actif !== false,
+      nom: profile.nom || '',
+      prenom: profile.prenom || '',
+      telephone: profile.telephone || '',
+    };
     next();
   } catch (err) {
     res.status(401).json({ message: 'Token invalide ou expiré' });

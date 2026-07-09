@@ -1,17 +1,18 @@
 const express = require('express');
-const router = express.Router();
-const Stock = require('../models/Stock');
-const TresorerieMouvement = require('../models/TresorerieMouvement');
-const { enregistrerMouvement, extraireNomPrenomUtilisateur } = require('../services/finance_service');
+const crypto = require('crypto');
+const { getAdminClient } = require('../services/supabase');
+const { getCompanyIdForUser } = require('../services/company_scope');
 
-function buildStockMovementKey(stockId, mouvementId) {
-  return `stock:${stockId}:movement:${mouvementId}`;
-}
+const router = express.Router();
 
 function parseNumberInput(value) {
   if (typeof value === 'number') return value;
   const normalized = (value ?? '').toString().trim().replace(',', '.');
   return Number(normalized);
+}
+
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function recalculerQuantite(mouvements = []) {
@@ -37,307 +38,400 @@ function recalculerQuantite(mouvements = []) {
   return quantiteActuelle;
 }
 
-// Obtenir tous les stocks
+function mapStockRow(row) {
+  const quantiteActuelle = Number(row.quantite_actuelle || 0);
+  const seuilAlerte = Number(row.seuil_alerte || 0);
+  return {
+    _id: row.id,
+    nom: row.nom,
+    categorie: row.categorie,
+    unite: row.unite,
+    quantiteActuelle,
+    seuilAlerte,
+    prixUnitaire: Number(row.prix_unitaire || 0),
+    fournisseur: row.fournisseur || '',
+    emplacement: row.emplacement || '',
+    dateExpiration: row.date_expiration,
+    dateCreationStock: row.date_creation_stock,
+    notes: row.notes || '',
+    enAlerte: quantiteActuelle <= seuilAlerte,
+    mouvements: toArray(row.mouvements),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 router.get('/', async (req, res) => {
   try {
-    const stocks = await Stock.find().sort({ categorie: 1, nom: 1 });
-    res.json(stocks);
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const result = await client
+      .from('stocks')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('categorie', { ascending: true })
+      .order('nom', { ascending: true });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    return res.json((result.data || []).map(mapStockRow));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Stocks par catégorie
 router.get('/categorie/:categorie', async (req, res) => {
   try {
-    const stocks = await Stock.find({ categorie: req.params.categorie });
-    res.json(stocks);
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const result = await client
+      .from('stocks')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('categorie', req.params.categorie)
+      .order('nom', { ascending: true });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    return res.json((result.data || []).map(mapStockRow));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Stocks en alerte (quantité basse)
 router.get('/alertes', async (req, res) => {
   try {
-    const stocks = await Stock.find({
-      $expr: { $lte: ['$quantiteActuelle', '$seuilAlerte'] }
-    });
-    res.json(stocks);
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const result = await client.from('stocks').select('*').eq('company_id', companyId);
+    if (result.error) return res.status(500).json({ message: result.error.message });
+
+    const rows = (result.data || []).filter((s) => Number(s.quantite_actuelle || 0) <= Number(s.seuil_alerte || 0));
+    return res.json(rows.map(mapStockRow));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Obtenir un stock par ID
 router.get('/:id', async (req, res) => {
   try {
-    const stock = await Stock.findById(req.params.id);
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
-    res.json(stock);
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const result = await client
+      .from('stocks')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    if (!result.data) return res.status(404).json({ message: 'Stock non trouvé' });
+
+    return res.json(mapStockRow(result.data));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Créer un stock
 router.post('/', async (req, res) => {
-  if (!req.body.date) {
-    return res.status(400).json({ message: 'La date est obligatoire' });
-  }
-
-  const dateCreation = new Date(req.body.date);
-  if (Number.isNaN(dateCreation.getTime())) {
-    return res.status(400).json({ message: 'Date invalide' });
-  }
-
-  const quantiteInitiale = parseNumberInput(req.body.quantiteActuelle || 0);
-  const seuilAlerte = parseNumberInput(req.body.seuilAlerte || 0);
-  const prixUnitaire = parseNumberInput(req.body.prixUnitaire || 0);
-  if (Number.isNaN(quantiteInitiale) || quantiteInitiale < 0) {
-    return res.status(400).json({ message: 'Quantité initiale invalide' });
-  }
-  if (Number.isNaN(seuilAlerte) || seuilAlerte < 0) {
-    return res.status(400).json({ message: 'Seuil d\'alerte invalide' });
-  }
-  if (Number.isNaN(prixUnitaire) || prixUnitaire < 0) {
-    return res.status(400).json({ message: 'Prix unitaire invalide' });
-  }
-  const auteur = req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
-
-  const mouvementCreation = {
-    date: dateCreation,
-    type: 'creation',
-    quantite: quantiteInitiale,
-    utilisateur: auteur,
-    motif: 'Création du stock',
-    fournisseur: req.body.fournisseur || '',
-    coutUnitaire: prixUnitaire,
-  };
-
-  const stock = new Stock({
-    nom: req.body.nom,
-    categorie: req.body.categorie,
-    unite: req.body.unite,
-    quantiteActuelle: quantiteInitiale,
-    seuilAlerte,
-    prixUnitaire,
-    dateCreationStock: dateCreation,
-    fournisseur: req.body.fournisseur,
-    emplacement: req.body.emplacement,
-    dateExpiration: req.body.dateExpiration,
-    notes: req.body.notes,
-    mouvements: [mouvementCreation]
-  });
-
   try {
-    const nouveauStock = await stock.save();
-    const coutUnitaire = prixUnitaire;
-    const montantAchatInitial = quantiteInitiale * (Number.isNaN(coutUnitaire) ? 0 : coutUnitaire);
-    if (montantAchatInitial > 0 && nouveauStock.mouvements[0]?._id) {
-      const userName = extraireNomPrenomUtilisateur(req.user);
-      await enregistrerMouvement({
-        nature: 'sortie',
-        source: 'stock_entree',
-        quiNom: userName.quiNom,
-        quiPrenom: userName.quiPrenom,
-        categorie: nouveauStock.categorie || 'stock',
-        type: nouveauStock.nom || 'stock',
-        montant: montantAchatInitial,
-        date: dateCreation,
-        commentaire: `Création stock ${nouveauStock.nom}`,
-        referenceType: 'Stock',
-        referenceId: nouveauStock._id,
-        externeCle: buildStockMovementKey(nouveauStock._id, nouveauStock.mouvements[0]._id),
-      });
-    }
-    res.status(201).json(nouveauStock);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-// Ajouter un mouvement (entrée/sortie)
-router.post('/:id/mouvement', async (req, res) => {
-  try {
-    const stock = await Stock.findById(req.params.id);
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
-
     if (!req.body.date) {
       return res.status(400).json({ message: 'La date est obligatoire' });
     }
 
-    const dateMouvement = new Date(req.body.date);
-    if (Number.isNaN(dateMouvement.getTime())) {
+    const dateCreation = new Date(req.body.date);
+    if (Number.isNaN(dateCreation.getTime())) {
       return res.status(400).json({ message: 'Date invalide' });
     }
 
-    const quantite = parseNumberInput(req.body.quantite);
-    if (Number.isNaN(quantite) || quantite < 0) {
-      return res.status(400).json({ message: 'Quantité invalide' });
-    }
+    const quantiteInitiale = parseNumberInput(req.body.quantiteActuelle || 0);
+    const seuilAlerte = parseNumberInput(req.body.seuilAlerte || 0);
+    const prixUnitaire = parseNumberInput(req.body.prixUnitaire || 0);
 
+    if (Number.isNaN(quantiteInitiale) || quantiteInitiale < 0) return res.status(400).json({ message: 'Quantité initiale invalide' });
+    if (Number.isNaN(seuilAlerte) || seuilAlerte < 0) return res.status(400).json({ message: "Seuil d'alerte invalide" });
+    if (Number.isNaN(prixUnitaire) || prixUnitaire < 0) return res.status(400).json({ message: 'Prix unitaire invalide' });
+
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
     const auteur = req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
 
-    const coutUnitaireSaisi = req.body.coutUnitaire ?? req.body.prixUnitaire;
-    const coutUnitaire = parseNumberInput(coutUnitaireSaisi);
-    const mouvement = stock.mouvements.create({
-      date: req.body.type === 'ajustement' ? new Date() : dateMouvement,
-      type: req.body.type,
-      quantite,
+    const mouvementCreation = {
+      _id: crypto.randomUUID(),
+      date: dateCreation.toISOString(),
+      type: 'creation',
+      quantite: quantiteInitiale,
       utilisateur: auteur,
-      bandeId: req.body.bandeId,
-      motif: req.body.motif,
-      fournisseur: req.body.fournisseur,
-      coutUnitaire: Number.isNaN(coutUnitaire) ? stock.prixUnitaire || 0 : coutUnitaire,
-    });
+      motif: 'Création du stock',
+      fournisseur: req.body.fournisseur || '',
+      coutUnitaire: prixUnitaire,
+    };
 
-    if (mouvement.type === 'sortie') {
-      if (stock.quantiteActuelle < mouvement.quantite) {
-        return res.status(400).json({ message: 'Stock insuffisant' });
-      }
-    } else if (mouvement.type !== 'entree' && mouvement.type !== 'ajustement') {
+    const payload = {
+      company_id: companyId,
+      nom: req.body.nom,
+      categorie: req.body.categorie,
+      unite: req.body.unite,
+      quantite_actuelle: quantiteInitiale,
+      seuil_alerte: seuilAlerte,
+      prix_unitaire: prixUnitaire,
+      date_creation_stock: dateCreation.toISOString(),
+      fournisseur: req.body.fournisseur || '',
+      emplacement: req.body.emplacement || '',
+      date_expiration: req.body.dateExpiration || null,
+      notes: req.body.notes || '',
+      mouvements: [mouvementCreation],
+      updated_at: new Date().toISOString(),
+    };
+
+    const created = await client.from('stocks').insert(payload).select('*').single();
+    if (created.error) return res.status(400).json({ message: created.error.message });
+
+    return res.status(201).json(mapStockRow(created.data));
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+});
+
+router.post('/:id/mouvement', async (req, res) => {
+  try {
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const stockRes = await client
+      .from('stocks')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (stockRes.error) return res.status(400).json({ message: stockRes.error.message });
+    if (!stockRes.data) return res.status(404).json({ message: 'Stock non trouvé' });
+
+    if (!req.body.date) return res.status(400).json({ message: 'La date est obligatoire' });
+    const dateMouvement = new Date(req.body.date);
+    if (Number.isNaN(dateMouvement.getTime())) return res.status(400).json({ message: 'Date invalide' });
+
+    const quantite = parseNumberInput(req.body.quantite);
+    if (Number.isNaN(quantite) || quantite < 0) return res.status(400).json({ message: 'Quantité invalide' });
+
+    const mouvements = toArray(stockRes.data.mouvements);
+    const type = req.body.type;
+    if (!['entree', 'sortie', 'ajustement'].includes(type)) {
       return res.status(400).json({ message: 'Type de mouvement invalide' });
     }
 
-    stock.mouvements.push(mouvement);
-    stock.quantiteActuelle = mouvement.type === 'ajustement'
-      ? Number(mouvement.quantite || 0)
-      : recalculerQuantite(stock.mouvements);
-    if ((mouvement.type === 'entree' || mouvement.type === 'ajustement') && !Number.isNaN(coutUnitaire) && coutUnitaire > 0) {
-      stock.prixUnitaire = coutUnitaire;
-    }
+    const auteur = req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
+    const coutUnitaireSaisi = req.body.coutUnitaire ?? req.body.prixUnitaire;
+    const coutUnitaire = parseNumberInput(coutUnitaireSaisi);
 
-    if (stock.quantiteActuelle < 0) {
+    const mouvement = {
+      _id: crypto.randomUUID(),
+      date: type === 'ajustement' ? new Date().toISOString() : dateMouvement.toISOString(),
+      type,
+      quantite,
+      utilisateur: auteur,
+      bandeId: req.body.bandeId || null,
+      motif: req.body.motif || '',
+      fournisseur: req.body.fournisseur || '',
+      coutUnitaire: Number.isNaN(coutUnitaire) ? Number(stockRes.data.prix_unitaire || 0) : coutUnitaire,
+    };
+
+    mouvements.push(mouvement);
+    let quantiteActuelle = type === 'ajustement' ? Number(quantite || 0) : recalculerQuantite(mouvements);
+    if (quantiteActuelle < 0) {
       return res.status(400).json({ message: 'Mouvement invalide: le stock deviendrait négatif' });
     }
 
-    if (mouvement.type === 'entree') {
-      const montantEntree = Number(mouvement.quantite || 0) * Number(mouvement.coutUnitaire || 0);
-      if (montantEntree > 0) {
-        const userName = extraireNomPrenomUtilisateur(req.user);
-        await enregistrerMouvement({
-          nature: 'sortie',
-          source: 'stock_entree',
-          quiNom: userName.quiNom,
-          quiPrenom: userName.quiPrenom,
-          categorie: stock.categorie || 'consommable',
-          type: stock.nom || 'stock',
-          montant: montantEntree,
-          date: mouvement.date,
-          commentaire: mouvement.motif || `Entrée stock ${stock.nom}`,
-          referenceType: 'Stock',
-          referenceId: stock._id,
-          externeCle: buildStockMovementKey(stock._id, mouvement._id),
-        });
-      }
+    const updates = {
+      mouvements,
+      quantite_actuelle: quantiteActuelle,
+      updated_at: new Date().toISOString(),
+    };
+    if ((type === 'entree' || type === 'ajustement') && !Number.isNaN(coutUnitaire) && coutUnitaire > 0) {
+      updates.prix_unitaire = coutUnitaire;
     }
 
-    const stockMAJ = await stock.save();
-    res.json(stockMAJ);
+    const saved = await client
+      .from('stocks')
+      .update(updates)
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+    return res.json(mapStockRow(saved.data));
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.delete('/:id/mouvements/:mouvementId', async (req, res) => {
   try {
-    const stock = await Stock.findById(req.params.id);
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
-    const mouvement = stock.mouvements.id(req.params.mouvementId);
-    if (!mouvement) {
-      return res.status(404).json({ message: 'Mouvement non trouvé' });
-    }
+    const stockRes = await client
+      .from('stocks')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
 
-    const mouvementsRestants = stock.mouvements.filter(
-      (item) => item._id.toString() !== req.params.mouvementId,
-    );
+    if (stockRes.error) return res.status(400).json({ message: stockRes.error.message });
+    if (!stockRes.data) return res.status(404).json({ message: 'Stock non trouvé' });
+
+    const mouvements = toArray(stockRes.data.mouvements);
+    const mouvement = mouvements.find((m) => String(m._id) === String(req.params.mouvementId));
+    if (!mouvement) return res.status(404).json({ message: 'Mouvement non trouvé' });
+
+    const mouvementsRestants = mouvements.filter((m) => String(m._id) !== String(req.params.mouvementId));
     const nouvelleQuantite = recalculerQuantite(mouvementsRestants);
     if (nouvelleQuantite < 0) {
       return res.status(400).json({ message: 'Suppression impossible: le stock deviendrait négatif' });
     }
 
-    stock.mouvements = mouvementsRestants;
-    stock.quantiteActuelle = nouvelleQuantite;
-    await stock.save();
+    const saved = await client
+      .from('stocks')
+      .update({ mouvements: mouvementsRestants, quantite_actuelle: nouvelleQuantite, updated_at: new Date().toISOString() })
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
 
-    await TresorerieMouvement.deleteMany({
-      externeCle: buildStockMovementKey(stock._id, req.params.mouvementId),
-    });
-
-    res.json(stock);
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+    return res.json(mapStockRow(saved.data));
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.delete('/:id/mouvements', async (req, res) => {
   try {
-    const stock = await Stock.findById(req.params.id);
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const stockRes = await client
+      .from('stocks')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (stockRes.error) return res.status(400).json({ message: stockRes.error.message });
+    if (!stockRes.data) return res.status(404).json({ message: 'Stock non trouvé' });
 
     const auteur = req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
-    const snapshot = stock.mouvements.create({
-      date: new Date(),
+    const snapshot = {
+      _id: crypto.randomUUID(),
+      date: new Date().toISOString(),
       type: 'ajustement',
-      quantite: Number(stock.quantiteActuelle || 0),
+      quantite: Number(stockRes.data.quantite_actuelle || 0),
       utilisateur: auteur,
       motif: 'Historique réinitialisé',
-      coutUnitaire: Number(stock.prixUnitaire || 0),
-    });
+      coutUnitaire: Number(stockRes.data.prix_unitaire || 0),
+    };
 
-    stock.mouvements = [snapshot];
-    await stock.save();
+    const saved = await client
+      .from('stocks')
+      .update({ mouvements: [snapshot], updated_at: new Date().toISOString() })
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
 
-    res.json(stock);
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+    return res.json(mapStockRow(saved.data));
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
-// Historique des mouvements d'un stock
 router.get('/:id/mouvements', async (req, res) => {
   try {
-    const stock = await Stock.findById(req.params.id).select('nom unite mouvements');
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
-    const mouvements = [...(stock.mouvements || [])]
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    const stockRes = await client
+      .from('stocks')
+      .select('id,nom,unite,mouvements')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
 
-    res.json({
-      stockId: stock._id,
-      nom: stock.nom,
-      unite: stock.unite,
+    if (stockRes.error) return res.status(500).json({ message: stockRes.error.message });
+    if (!stockRes.data) return res.status(404).json({ message: 'Stock non trouvé' });
+
+    const mouvements = toArray(stockRes.data.mouvements).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return res.json({
+      stockId: stockRes.data.id,
+      nom: stockRes.data.nom,
+      unite: stockRes.data.unite,
       mouvements,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Mettre à jour un stock
 router.put('/:id', async (req, res) => {
   try {
-    const stock = await Stock.findById(req.params.id);
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
-    Object.assign(stock, req.body);
-    const stockMAJ = await stock.save();
-    res.json(stockMAJ);
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const updates = { updated_at: new Date().toISOString() };
+
+    if (req.body.nom !== undefined) updates.nom = req.body.nom;
+    if (req.body.categorie !== undefined) updates.categorie = req.body.categorie;
+    if (req.body.unite !== undefined) updates.unite = req.body.unite;
+    if (req.body.quantiteActuelle !== undefined) updates.quantite_actuelle = Number(req.body.quantiteActuelle || 0);
+    if (req.body.seuilAlerte !== undefined) updates.seuil_alerte = Number(req.body.seuilAlerte || 0);
+    if (req.body.prixUnitaire !== undefined) updates.prix_unitaire = Number(req.body.prixUnitaire || 0);
+    if (req.body.fournisseur !== undefined) updates.fournisseur = req.body.fournisseur;
+    if (req.body.emplacement !== undefined) updates.emplacement = req.body.emplacement;
+    if (req.body.dateExpiration !== undefined) updates.date_expiration = req.body.dateExpiration;
+    if (req.body.notes !== undefined) updates.notes = req.body.notes;
+
+    const saved = await client
+      .from('stocks')
+      .update(updates)
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('*')
+      .maybeSingle();
+
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+    if (!saved.data) return res.status(404).json({ message: 'Stock non trouvé' });
+
+    return res.json(mapStockRow(saved.data));
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
-// Supprimer un stock
 router.delete('/:id', async (req, res) => {
   try {
-    const stock = await Stock.findById(req.params.id);
-    if (!stock) return res.status(404).json({ message: 'Stock non trouvé' });
-    await stock.deleteOne();
-    res.json({ message: 'Stock supprimé' });
+    const client = getAdminClient();
+    const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const removed = await client
+      .from('stocks')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .select('id')
+      .maybeSingle();
+
+    if (removed.error) return res.status(500).json({ message: removed.error.message });
+    if (!removed.data) return res.status(404).json({ message: 'Stock non trouvé' });
+
+    return res.json({ message: 'Stock supprimé' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 

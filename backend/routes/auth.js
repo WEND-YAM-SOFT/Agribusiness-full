@@ -1,299 +1,470 @@
 const express = require('express');
-const router = express.Router();
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const Utilisateur = require('../models/Utilisateur');
-const PasswordResetToken = require('../models/PasswordResetToken');
-const AuditLog = require('../models/AuditLog');
 const { authenticate } = require('../middleware/auth');
 const { sendPasswordResetEmail } = require('../services/email_service');
+const { getAdminClient, mapRole, mergeFullName, toPublicUser, logAudit } = require('../services/supabase');
+
+const router = express.Router();
 
 function signToken(user) {
   return jwt.sign(
-    { id: user._id, role: user.role },
+    { id: user.id, role: user.role },
     process.env.JWT_SECRET || 'dev_secret_change_me',
     { expiresIn: '8h' }
   );
 }
 
-function normalizeRole(role) {
-  return role === 'admin' ? 'admin' : 'utilisateur';
+async function getOrCreateDefaultCompanyId(client) {
+  const { data: existing, error: readError } = await client
+    .from('entreprises')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+  if (existing?.id) return existing.id;
+
+  const { data: created, error: createError } = await client
+    .from('entreprises')
+    .insert({ nom: 'Entreprise principale' })
+    .select('id')
+    .single();
+  if (createError) throw new Error(createError.message);
+  return created.id;
+}
+
+async function getProfile(client, userId) {
+  const { data, error } = await client
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 async function ensureInitialAdmin() {
-  const hasAdmin = await Utilisateur.findOne({ role: 'admin' });
-  if (hasAdmin) return;
+  const client = getAdminClient();
+  const { data: hasAdmin, error: adminReadError } = await client
+    .from('profiles')
+    .select('id')
+    .eq('role', 'admin')
+    .limit(1)
+    .maybeSingle();
 
-  const existingDefault = await Utilisateur.findOne({ email: 'admin@agribusiness.local' });
-  if (existingDefault) {
-    existingDefault.role = 'admin';
-    existingDefault.actif = true;
-    existingDefault.mustChangePassword = true;
-    await existingDefault.save();
-    return;
+  if (adminReadError) throw new Error(adminReadError.message);
+  if (hasAdmin?.id) return;
+
+  const defaultEmail = 'admin@agribusiness.local';
+  const defaultPassword = 'Admin@123';
+  const companyId = await getOrCreateDefaultCompanyId(client);
+
+  const { data: users } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const existing = (users?.users || []).find((u) => (u.email || '').toLowerCase() === defaultEmail);
+
+  let userId = existing?.id;
+  if (!userId) {
+    const created = await client.auth.admin.createUser({
+      email: defaultEmail,
+      password: defaultPassword,
+      email_confirm: true,
+      user_metadata: {
+        nom: 'Administrateur',
+        prenom: 'Principal',
+        telephone: '',
+        permissions: [],
+        actif: true,
+        mustChangePassword: true,
+      },
+    });
+    if (created.error) throw new Error(created.error.message);
+    userId = created.data.user.id;
   }
 
-  await Utilisateur.create({
-    nom: 'Administrateur',
-    prenom: 'Principal',
-    email: 'admin@agribusiness.local',
-    motDePasse: 'Admin@123',
+  const { error: profileError } = await client.from('profiles').upsert({
+    id: userId,
+    company_id: companyId,
     role: 'admin',
-    mustChangePassword: true,
-    actif: true
+    full_name: 'Administrateur Principal',
   });
+  if (profileError) throw new Error(profileError.message);
 }
 
-// Inscription
+async function buildPublicUser(client, authUser, profile) {
+  const metadata = authUser?.user_metadata || {};
+  const combined = {
+    ...profile,
+    email: authUser?.email || '',
+    telephone: metadata.telephone || '',
+    permissions: Array.isArray(metadata.permissions) ? metadata.permissions : [],
+    actif: metadata.actif !== false,
+    must_change_password: metadata.mustChangePassword === true,
+    derniere_connexion_at: metadata.derniereConnexionAt || null,
+  };
+  return toPublicUser(combined, authUser?.email || '');
+}
+
 router.post('/inscription', async (req, res) => {
   try {
     await ensureInitialAdmin();
+    const client = getAdminClient();
 
-    const existant = await Utilisateur.findOne({ email: req.body.email });
-    if (existant) {
-      return res.status(400).json({ message: 'Cet email est déjà utilisé' });
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.motDePasse || '';
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email et mot de passe requis' });
     }
 
-    const utilisateur = new Utilisateur({
-      nom: req.body.nom,
-      prenom: req.body.prenom || '',
-      email: req.body.email,
-      motDePasse: req.body.motDePasse,
-      role: normalizeRole(req.body.role),
-      permissions: req.body.permissions,
-      telephone: req.body.telephone
+    const companyId = req.body.company_id || (await getOrCreateDefaultCompanyId(client));
+
+    const created = await client.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        nom: req.body.nom || '',
+        prenom: req.body.prenom || '',
+        telephone: req.body.telephone || '',
+        permissions: Array.isArray(req.body.permissions) ? req.body.permissions : [],
+        actif: true,
+        mustChangePassword: false,
+      },
     });
 
-    await utilisateur.save();
-    const token = signToken(utilisateur);
+    if (created.error) {
+      return res.status(400).json({ message: created.error.message });
+    }
 
-    res.status(201).json({
-      token,
-      utilisateur: utilisateur.toPublicJson()
+    const role = mapRole(req.body.role);
+    const fullName = mergeFullName(req.body.nom || '', req.body.prenom || '');
+    const { error: profileError } = await client.from('profiles').upsert({
+      id: created.data.user.id,
+      company_id: companyId,
+      role,
+      full_name: fullName || email,
     });
+    if (profileError) {
+      return res.status(400).json({ message: profileError.message });
+    }
+
+    const publicUser = await buildPublicUser(client, created.data.user, {
+      id: created.data.user.id,
+      role,
+      full_name: fullName,
+    });
+
+    const token = signToken(publicUser);
+    return res.status(201).json({ token, utilisateur: publicUser });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
-// Connexion
 router.post('/connexion', async (req, res) => {
   try {
     await ensureInitialAdmin();
+    const client = getAdminClient();
 
-    const utilisateur = await Utilisateur.findOne({ email: req.body.email });
-    if (!utilisateur) {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const motDePasse = req.body.motDePasse || '';
+
+    const login = await client.auth.signInWithPassword({ email, password: motDePasse });
+    if (login.error || !login.data?.user) {
       return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
     }
 
-    const motDePasseValide = await utilisateur.verifierMotDePasse(req.body.motDePasse);
-    if (!motDePasseValide) {
-      return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
+    let profile = await getProfile(client, login.data.user.id);
+    if (!profile) {
+      const companyId = await getOrCreateDefaultCompanyId(client);
+      const fullName = mergeFullName(
+        login.data.user.user_metadata?.nom || '',
+        login.data.user.user_metadata?.prenom || ''
+      );
+      const inserted = await client
+        .from('profiles')
+        .insert({
+          id: login.data.user.id,
+          company_id: companyId,
+          role: 'utilisateur',
+          full_name: fullName || email,
+        })
+        .select('*')
+        .single();
+
+      if (inserted.error) {
+        return res.status(400).json({ message: inserted.error.message });
+      }
+      profile = inserted.data;
     }
 
-    if (!utilisateur.actif) {
+    const metadata = login.data.user.user_metadata || {};
+    if (metadata.actif === false) {
       return res.status(403).json({ message: 'Compte désactivé' });
     }
 
-    if (!['admin', 'utilisateur'].includes(utilisateur.role)) {
-      utilisateur.role = 'utilisateur';
-    }
+    await client.auth.admin.updateUserById(login.data.user.id, {
+      user_metadata: {
+        ...metadata,
+        derniereConnexionAt: new Date().toISOString(),
+      },
+    });
 
-    utilisateur.derniereConnexionAt = new Date();
-    await utilisateur.save();
+    const publicUser = await buildPublicUser(client, {
+      ...login.data.user,
+      user_metadata: {
+        ...metadata,
+        derniereConnexionAt: new Date().toISOString(),
+      },
+    }, profile);
 
-    const token = signToken(utilisateur);
+    const token = signToken(publicUser);
 
-    await AuditLog.create({
-      userId: utilisateur._id,
-      userEmail: utilisateur.email,
+    await logAudit(client, {
+      userId: publicUser.id,
+      userEmail: publicUser.email,
       action: 'auth.login',
       targetType: 'Utilisateur',
-      targetId: utilisateur._id,
+      targetId: publicUser.id,
       metadata: {},
-      ip: req.ip || ''
+      ip: '',
     });
 
-    res.json({
+    return res.json({
       token,
-      utilisateur: utilisateur.toPublicJson(),
-      sessionTimeoutMinutes: 30
+      utilisateur: publicUser,
+      sessionTimeoutMinutes: 30,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
-// Obtenir le profil
 router.get('/profil', authenticate, async (req, res) => {
   try {
-    const utilisateur = await Utilisateur.findById(req.user._id).select('-motDePasse');
-    if (!utilisateur) return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    const client = getAdminClient();
+    const userData = await client.auth.admin.getUserById(req.user.id || req.user._id);
+    if (userData.error || !userData.data?.user) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
+    const profile = await getProfile(client, userData.data.user.id);
+    if (!profile) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
-    res.json(utilisateur.toPublicJson());
+    const publicUser = await buildPublicUser(client, userData.data.user, profile);
+    return res.json(publicUser);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
 router.put('/profil', authenticate, async (req, res) => {
   try {
-    const utilisateur = await Utilisateur.findById(req.user._id);
-    if (!utilisateur) return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    const client = getAdminClient();
+    const userId = req.user.id || req.user._id;
 
-    const { nom, prenom, email, telephone } = req.body;
-
-    if (email && email !== utilisateur.email) {
-      const exists = await Utilisateur.findOne({ email, _id: { $ne: utilisateur._id } });
-      if (exists) return res.status(400).json({ message: 'Cet email existe déjà' });
-      utilisateur.email = email;
+    const userData = await client.auth.admin.getUserById(userId);
+    if (userData.error || !userData.data?.user) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
     }
 
-    if (nom !== undefined) utilisateur.nom = nom;
-    if (prenom !== undefined) utilisateur.prenom = prenom;
-    if (telephone !== undefined) utilisateur.telephone = telephone;
+    const authUser = userData.data.user;
+    const email = (req.body.email || authUser.email || '').trim().toLowerCase();
+    const nom = (req.body.nom || authUser.user_metadata?.nom || '').trim();
+    const prenom = (req.body.prenom || authUser.user_metadata?.prenom || '').trim();
+    const telephone = (req.body.telephone || authUser.user_metadata?.telephone || '').trim();
 
-    await utilisateur.save();
-
-    await AuditLog.create({
-      userId: utilisateur._id,
-      userEmail: utilisateur.email,
-      action: 'auth.profile_update',
-      targetType: 'Utilisateur',
-      targetId: utilisateur._id,
-      metadata: {},
-      ip: req.ip || ''
+    const updatedAuth = await client.auth.admin.updateUserById(userId, {
+      email,
+      user_metadata: {
+        ...(authUser.user_metadata || {}),
+        nom,
+        prenom,
+        telephone,
+      },
     });
 
-    res.json(utilisateur.toPublicJson());
+    if (updatedAuth.error) {
+      return res.status(400).json({ message: updatedAuth.error.message });
+    }
+
+    const profile = await getProfile(client, userId);
+    if (!profile) return res.status(404).json({ message: 'Utilisateur non trouvé' });
+
+    const { error: profileError } = await client
+      .from('profiles')
+      .update({ full_name: mergeFullName(nom, prenom) || email })
+      .eq('id', userId);
+    if (profileError) return res.status(400).json({ message: profileError.message });
+
+    await logAudit(client, {
+      userId,
+      userEmail: email,
+      action: 'auth.profile_update',
+      targetType: 'Utilisateur',
+      targetId: userId,
+      metadata: {},
+      ip: '',
+    });
+
+    const refreshedProfile = await getProfile(client, userId);
+    const publicUser = await buildPublicUser(client, updatedAuth.data.user, refreshedProfile);
+    return res.json(publicUser);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.put('/mot-de-passe', authenticate, async (req, res) => {
   try {
+    const client = getAdminClient();
+    const userId = req.user.id || req.user._id;
     const { motDePasseActuel, nouveauMotDePasse } = req.body;
-    const utilisateur = await Utilisateur.findById(req.user._id);
-    if (!utilisateur) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
-    const ok = await utilisateur.verifierMotDePasse(motDePasseActuel || '');
-    if (!ok) return res.status(400).json({ message: 'Mot de passe actuel incorrect' });
+    const userData = await client.auth.admin.getUserById(userId);
+    if (userData.error || !userData.data?.user) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
 
-    utilisateur.motDePasse = nouveauMotDePasse;
-    utilisateur.mustChangePassword = false;
-    await utilisateur.save();
+    const email = userData.data.user.email;
+    const verify = await client.auth.signInWithPassword({
+      email,
+      password: motDePasseActuel || '',
+    });
+    if (verify.error) {
+      return res.status(400).json({ message: 'Mot de passe actuel incorrect' });
+    }
 
-    await AuditLog.create({
-      userId: utilisateur._id,
-      userEmail: utilisateur.email,
+    const updated = await client.auth.admin.updateUserById(userId, {
+      password: nouveauMotDePasse,
+      user_metadata: {
+        ...(userData.data.user.user_metadata || {}),
+        mustChangePassword: false,
+      },
+    });
+    if (updated.error) {
+      return res.status(400).json({ message: updated.error.message });
+    }
+
+    await logAudit(client, {
+      userId,
+      userEmail: email,
       action: 'auth.change_password',
       targetType: 'Utilisateur',
-      targetId: utilisateur._id,
+      targetId: userId,
       metadata: {},
-      ip: req.ip || ''
+      ip: '',
     });
 
-    res.json({ message: 'Mot de passe mis à jour' });
+    return res.json({ message: 'Mot de passe mis à jour' });
   } catch (err) {
-    const status = err.message && err.message.toLowerCase().includes('service email') ? 503 : 400;
-    res.status(status).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.post('/mot-de-passe/oublie', async (req, res) => {
   try {
+    const client = getAdminClient();
     const email = (req.body.email || '').trim().toLowerCase();
-    const user = await Utilisateur.findOne({ email });
+    const users = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const user = (users.data?.users || []).find((u) => (u.email || '').toLowerCase() === email);
+
     if (!user) {
       return res.json({
-        message: 'Si cet email existe, un email de réinitialisation a été envoyé.'
+        message: 'Si cet email existe, un email de réinitialisation a été envoyé.',
       });
     }
 
-    await PasswordResetToken.deleteMany({ userId: user._id, usedAt: null });
+    await client.from('password_reset_tokens').delete().eq('user_id', user.id).is('used_at', null);
 
     const rawToken = crypto.randomBytes(24).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-    await PasswordResetToken.create({ userId: user._id, tokenHash, expiresAt });
+    const inserted = await client.from('password_reset_tokens').insert({
+      user_id: user.id,
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+    });
+    if (inserted.error) return res.status(400).json({ message: inserted.error.message });
 
-    await AuditLog.create({
-      userId: user._id,
+    await logAudit(client, {
+      userId: user.id,
       userEmail: user.email,
       action: 'auth.request_password_reset',
       targetType: 'Utilisateur',
-      targetId: user._id,
+      targetId: user.id,
       metadata: {},
-      ip: req.ip || ''
+      ip: '',
     });
 
     await sendPasswordResetEmail({
       to: user.email,
-      userName: `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email,
+      userName: mergeFullName(user.user_metadata?.prenom || '', user.user_metadata?.nom || '') || user.email,
       token: rawToken,
-      expiresMinutes: 30
+      expiresMinutes: 30,
     });
 
-    res.json({
-      message: 'Un email de réinitialisation a été envoyé.'
-    });
+    return res.json({ message: 'Un email de réinitialisation a été envoyé.' });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.post('/mot-de-passe/reinitialiser', async (req, res) => {
   try {
+    const client = getAdminClient();
     const { token, nouveauMotDePasse } = req.body;
     const tokenHash = crypto.createHash('sha256').update(token || '').digest('hex');
 
-    const reset = await PasswordResetToken.findOne({
-      tokenHash,
-      usedAt: null,
-      expiresAt: { $gt: new Date() }
+    const lookup = await client
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('token_hash', tokenHash)
+      .is('used_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+
+    if (lookup.error) return res.status(400).json({ message: lookup.error.message });
+    if (!lookup.data) return res.status(400).json({ message: 'Token invalide ou expiré' });
+
+    const updateUser = await client.auth.admin.updateUserById(lookup.data.user_id, {
+      password: nouveauMotDePasse,
     });
+    if (updateUser.error) return res.status(400).json({ message: updateUser.error.message });
 
-    if (!reset) return res.status(400).json({ message: 'Token invalide ou expiré' });
+    const markUsed = await client
+      .from('password_reset_tokens')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', lookup.data.id);
+    if (markUsed.error) return res.status(400).json({ message: markUsed.error.message });
 
-    const user = await Utilisateur.findById(reset.userId);
-    if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
-
-    user.motDePasse = nouveauMotDePasse;
-    user.mustChangePassword = false;
-    await user.save();
-
-    reset.usedAt = new Date();
-    await reset.save();
-
-    await AuditLog.create({
-      userId: user._id,
-      userEmail: user.email,
+    await logAudit(client, {
+      userId: lookup.data.user_id,
+      userEmail: updateUser.data.user?.email || '',
       action: 'auth.reset_password',
       targetType: 'Utilisateur',
-      targetId: user._id,
+      targetId: lookup.data.user_id,
       metadata: {},
-      ip: req.ip || ''
+      ip: '',
     });
 
-    res.json({ message: 'Mot de passe réinitialisé avec succès' });
+    return res.json({ message: 'Mot de passe réinitialisé avec succès' });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: err.message });
   }
 });
 
 router.post('/deconnexion', authenticate, async (req, res) => {
-  await AuditLog.create({
-    userId: req.user._id,
+  const client = getAdminClient();
+  await logAudit(client, {
+    userId: req.user.id || req.user._id,
     userEmail: req.user.email,
     action: 'auth.logout',
     targetType: 'Utilisateur',
-    targetId: req.user._id,
+    targetId: req.user.id || req.user._id,
     metadata: {},
-    ip: req.ip || ''
+    ip: '',
   });
-  res.json({ message: 'Déconnecté' });
+  return res.json({ message: 'Déconnecté' });
 });
 
 module.exports = router;
