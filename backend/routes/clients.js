@@ -116,14 +116,18 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const adresse = (req.body.adresse || '').toString().trim();
-    const typeClient = (req.body.typeClient || '').toString().trim();
-    const commentaireActivite = (req.body.commentaireActivite || '').toString().trim();
-    if (!adresse || !typeClient || !commentaireActivite) {
-      return res.status(400).json({
-        message: 'Les champs obligatoires client sont: adresse, typeClient, commentaireActivite',
-      });
+    const nom = (req.body.nom || '').toString().trim();
+    const prenom = (req.body.prenom || '').toString().trim();
+    const telephone = (req.body.telephone || '').toString().trim();
+    if (!nom || !prenom || !telephone) {
+      return res.status(400).json({ message: 'Les champs obligatoires client sont: nom, prenom, telephone' });
     }
+
+    const adresse = (req.body.adresse || '').toString().trim() || 'Non renseignée';
+    const rawTypeClient = (req.body.typeClient || req.body.type_client || '').toString().trim().toLowerCase();
+    const typeClient = rawTypeClient === 'professionnel' ? 'pro' : (rawTypeClient || 'particulier');
+    const commentaireActivite = (req.body.commentaireActivite || req.body.commentaire_activite || '').toString().trim() || 'RAS';
+
     if (!['pro', 'particulier'].includes(typeClient)) {
       return res.status(400).json({ message: 'typeClient invalide (pro ou particulier)' });
     }
@@ -133,9 +137,9 @@ router.post('/', async (req, res) => {
 
     const payload = {
       company_id: companyId,
-      nom: req.body.nom,
-      prenom: req.body.prenom || '',
-      telephone: req.body.telephone || '',
+      nom,
+      prenom,
+      telephone,
       email: req.body.email || '',
       adresse,
       type_client: typeClient,

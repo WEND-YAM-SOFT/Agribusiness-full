@@ -11,54 +11,32 @@ function extractMissingColumn(error) {
   return match?.[1] || '';
 }
 
-function toLegacyStockPayload(payload) {
-  const mapped = { ...payload };
-  if (Object.prototype.hasOwnProperty.call(mapped, 'company_id')) {
-    mapped.companyId = mapped.company_id;
-    delete mapped.company_id;
-  }
-  if (Object.prototype.hasOwnProperty.call(mapped, 'quantite_actuelle')) {
-    mapped.quantiteActuelle = mapped.quantite_actuelle;
-    delete mapped.quantite_actuelle;
-  }
-  if (Object.prototype.hasOwnProperty.call(mapped, 'seuil_alerte')) {
-    mapped.seuilAlerte = mapped.seuil_alerte;
-    delete mapped.seuil_alerte;
-  }
-  if (Object.prototype.hasOwnProperty.call(mapped, 'prix_unitaire')) {
-    mapped.prixUnitaire = mapped.prix_unitaire;
-    delete mapped.prix_unitaire;
-  }
-  if (Object.prototype.hasOwnProperty.call(mapped, 'date_creation_stock')) {
-    mapped.dateCreationStock = mapped.date_creation_stock;
-    delete mapped.date_creation_stock;
-  }
-  if (Object.prototype.hasOwnProperty.call(mapped, 'date_expiration')) {
-    mapped.dateExpiration = mapped.date_expiration;
-    delete mapped.date_expiration;
-  }
-  if (Object.prototype.hasOwnProperty.call(mapped, 'updated_at')) {
-    mapped.updatedAt = mapped.updated_at;
-    delete mapped.updated_at;
-  }
-  return mapped;
-}
+const STOCK_COLUMN_ALIASES = {
+  company_id: 'companyId',
+  quantite_actuelle: 'quantiteActuelle',
+  seuil_alerte: 'seuilAlerte',
+  prix_unitaire: 'prixUnitaire',
+  date_creation_stock: 'dateCreationStock',
+  date_expiration: 'dateExpiration',
+  updated_at: 'updatedAt',
+  created_at: 'createdAt',
+};
 
 async function insertStockCompat(client, payload) {
   let candidate = { ...payload };
-  let legacyAttempted = false;
+  let lastMissingColumn = '';
 
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     const result = await client.from('stocks').insert(candidate).select('*').single();
     if (!result.error) return result;
 
     const missingColumn = extractMissingColumn(result.error);
     if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
 
-    if (!legacyAttempted && missingColumn.includes('_')) {
-      candidate = toLegacyStockPayload(candidate);
-      legacyAttempted = true;
-      continue;
+    const alias = STOCK_COLUMN_ALIASES[missingColumn];
+    if (alias && Object.prototype.hasOwnProperty.call(candidate, missingColumn) && !Object.prototype.hasOwnProperty.call(candidate, alias)) {
+      candidate[alias] = candidate[missingColumn];
     }
 
     if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
@@ -70,7 +48,7 @@ async function insertStockCompat(client, payload) {
 
   return {
     data: null,
-    error: { message: 'Creation stock impossible: schema incompatible apres tentatives de fallback' },
+    error: { message: `Creation stock impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})` },
   };
 }
 
