@@ -318,7 +318,22 @@ router.post('/:id/mouvement', async (req, res) => {
     };
 
     mouvements.push(mouvement);
-    let quantiteActuelle = type === 'ajustement' ? Number(quantite || 0) : recalculerQuantite(mouvements);
+    let quantiteActuelle;
+    
+    if (type === 'ajustement') {
+      quantiteActuelle = Number(quantite || 0);
+    } else if (mouvements.length === 1) {
+      // When mouvements column is missing (production fallback), use current stock quantity
+      const quantiteActuelleStock = Number(stockRes.data.quantite_actuelle ?? stockRes.data.quantiteActuelle ?? 0);
+      if (type === 'entree') {
+        quantiteActuelle = quantiteActuelleStock + Number(quantite || 0);
+      } else if (type === 'sortie') {
+        quantiteActuelle = quantiteActuelleStock - Number(quantite || 0);
+      }
+    } else {
+      quantiteActuelle = recalculerQuantite(mouvements);
+    }
+    
     if (quantiteActuelle < 0) {
       return res.status(400).json({ message: 'Mouvement invalide: le stock deviendrait négatif' });
     }
