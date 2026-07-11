@@ -52,6 +52,37 @@ async function insertStockCompat(client, payload) {
   };
 }
 
+async function updateStockCompat(client, updateObj, companyId, stockId) {
+  let candidate = { ...updateObj };
+  let lastMissingColumn = '';
+
+  for (let i = 0; i < 15; i += 1) {
+    const result = await client
+      .from('stocks')
+      .update(candidate)
+      .eq('company_id', companyId)
+      .eq('id', stockId)
+      .select('*')
+      .single();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: `Update stock impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})` },
+  };
+}
+
 function parseNumberInput(value) {
   if (typeof value === 'number') return value;
   const normalized = (value ?? '').toString().trim().replace(',', '.');
@@ -102,7 +133,7 @@ function mapStockRow(row) {
     dateCreationStock: row.date_creation_stock || row.dateCreationStock || null,
     notes: row.notes || '',
     enAlerte: quantiteActuelle <= seuilAlerte,
-    mouvements: toArray(row.mouvements),
+    mouvements: toArray(row.mouvements || row.mouvement || []),
     createdAt: row.created_at || row.createdAt || null,
     updatedAt: row.updated_at || row.updatedAt || null,
   };
@@ -301,14 +332,7 @@ router.post('/:id/mouvement', async (req, res) => {
       updates.prix_unitaire = coutUnitaire;
     }
 
-    const saved = await client
-      .from('stocks')
-      .update(updates)
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
-
+    const saved = await updateStockCompat(client, updates, companyId, req.params.id);
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.json(mapStockRow(saved.data));
   } catch (err) {
