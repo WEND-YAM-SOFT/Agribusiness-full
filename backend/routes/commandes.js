@@ -5,6 +5,37 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+async function insertCommandeCompat(apiClient, payload) {
+  let candidate = { ...payload };
+  let lastMissingColumn = '';
+
+  for (let i = 0; i < 15; i += 1) {
+    const result = await apiClient.from('commandes').insert(candidate).select('*').single();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: `Creation commande impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})` },
+  };
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -20,14 +51,14 @@ function mapCommandeRow(row, client) {
           telephone: client.telephone || '',
         }
       : row.client_id,
-    bande: row.bande_snapshot || row.bande_id || null,
+    bande: row.bande_snapshot || row.bande_id || row.band_id || null,
     produits: toArray(row.produits),
-    montantTotal: Number(row.montant_total || 0),
+    montantTotal: Number(row.montant_total || row.montantTotal || 0),
     statut: row.statut,
-    dateLivraison: row.date_livraison,
+    dateLivraison: row.date_livraison || row.dateLivraison,
     notes: row.notes || '',
-    commentaires: toArray(row.commentaires),
-    historiqueActions: toArray(row.historique_actions),
+    commentaires: toArray(row.commentaires || row.comments),
+    historiqueActions: toArray(row.historique_actions || row.historiqueActions),
     livraisons: toArray(row.livraisons),
     venteComptabilisee: row.vente_comptabilisee === true,
     dernierMouvementTresorerieId: row.dernier_mouvement_tresorerie_id || null,
@@ -177,7 +208,7 @@ router.post('/', async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    const inserted = await apiClient.from('commandes').insert(payload).select('*').single();
+    const inserted = await insertCommandeCompat(apiClient, payload);
     if (inserted.error) return res.status(400).json({ message: inserted.error.message });
 
     if (clientSnapshot) {
