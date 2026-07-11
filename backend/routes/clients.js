@@ -4,6 +4,37 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+async function insertClientCompat(client, payload) {
+  let candidate = { ...payload };
+  let lastMissingColumn = '';
+
+  for (let i = 0; i < 15; i += 1) {
+    const result = await client.from('clients').insert(candidate).select('*').single();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: `Creation client impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})` },
+  };
+}
+
 function mapClientRow(row) {
   return {
     _id: row.id,
@@ -11,16 +42,16 @@ function mapClientRow(row) {
     prenom: row.prenom || '',
     telephone: row.telephone || '',
     email: row.email || '',
-    adresse: row.adresse || '',
-    typeClient: row.type_client || 'particulier',
-    commentaireActivite: row.commentaire_activite || '',
-    entreprise: row.entreprise || '',
+    adresse: row.adresse || row.address || '',
+    typeClient: row.type_client || row.typeClient || 'particulier',
+    commentaireActivite: row.commentaire_activite || row.commentaireActivite || '',
+    entreprise: row.entreprise || row.company || '',
     notes: row.notes || '',
-    statut: row.statut || 'prospect',
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    dernierContactLe: row.dernier_contact_le,
-    chiffreAffairesCumul: Number(row.chiffre_affaires_cumul || 0),
+    statut: row.statut || row.status || 'prospect',
+    createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt,
+    dernierContactLe: row.dernier_contact_le || row.dernierContactLe,
+    chiffreAffairesCumul: Number(row.chiffre_affaires_cumul || row.chiffreAffairesCumul || 0),
   };
 }
 
@@ -151,7 +182,7 @@ router.post('/', async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await client.from('clients').insert(payload).select('*').single();
+    const { data, error } = await insertClientCompat(client, payload);
     if (error) return res.status(400).json({ message: error.message });
 
     return res.status(201).json(mapClientRow(data));
