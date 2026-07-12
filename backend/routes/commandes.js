@@ -11,6 +11,94 @@ function extractMissingColumn(error) {
   return match?.[1] || '';
 }
 
+function toLegacyTresoreriePayload(payload) {
+  const mapped = { ...payload };
+  if (Object.prototype.hasOwnProperty.call(mapped, 'company_id')) {
+    mapped.companyId = mapped.company_id;
+    delete mapped.company_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_nom')) {
+    mapped.quiNom = mapped.qui_nom;
+    delete mapped.qui_nom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_prenom')) {
+    mapped.quiPrenom = mapped.qui_prenom;
+    delete mapped.qui_prenom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'date_mouvement')) {
+    mapped.date = mapped.date_mouvement;
+    delete mapped.date_mouvement;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_type')) {
+    mapped.referenceType = mapped.reference_type;
+    delete mapped.reference_type;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_id')) {
+    mapped.referenceId = mapped.reference_id;
+    delete mapped.reference_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'externe_cle')) {
+    mapped.externeCle = mapped.externe_cle;
+    delete mapped.externe_cle;
+  }
+  return mapped;
+}
+
+function withCategoryHint(payload) {
+  const cloned = { ...payload };
+  const categoryHint = (cloned.categorie || '').toString().trim();
+  if (!categoryHint) return cloned;
+  const originalComment = (cloned.commentaire || '').toString().trim();
+  cloned.commentaire = `[Categorie: ${categoryHint}]${originalComment ? ` ${originalComment}` : ''}`;
+  return cloned;
+}
+
+async function insertTresorerieCompat(api, payload) {
+  let candidate = { ...payload };
+  let legacyAttempted = false;
+
+  for (let i = 0; i < 6; i += 1) {
+    const result = await api.from('tresorerie_mouvements').insert(candidate).select('id').maybeSingle();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+
+    if (!legacyAttempted && missingColumn.includes('_')) {
+      candidate = toLegacyTresoreriePayload(candidate);
+      legacyAttempted = true;
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    if (missingColumn === 'categorie') {
+      candidate = withCategoryHint(candidate);
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: 'Insertion tresorerie impossible: schema incompatible apres tentatives de fallback' },
+  };
+}
+
+function getUserName(req) {
+  const full = (req.user?.nomComplet || req.user?.fullName || '').toString().trim();
+  if (full) {
+    const parts = full.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return { quiNom: parts[0], quiPrenom: parts[0] };
+    return { quiNom: parts.slice(1).join(' '), quiPrenom: parts[0] };
+  }
+  const email = (req.user?.email || '').toString();
+  const local = email.includes('@') ? email.split('@')[0] : email;
+  return { quiNom: local || 'Utilisateur', quiPrenom: local || 'Utilisateur' };
+}
+
 async function insertCommandeCompat(apiClient, payload) {
   let candidate = { ...payload };
   let lastMissingColumn = '';
@@ -306,8 +394,36 @@ router.put('/:id/statut', async (req, res) => {
       date: new Date().toISOString(),
     });
 
+    let tresoreriePayload = null;
+    if (nouveauStatut === 'payee' && current.data.vente_comptabilisee !== true) {
+      const userName = getUserName(req);
+      tresoreriePayload = {
+        company_id: companyId,
+        nature: 'entree',
+        source: 'vente_commande_payee',
+        qui_nom: userName.quiNom,
+        qui_prenom: userName.quiPrenom,
+        categorie: 'vente',
+        type: 'Commande client',
+        montant: Number(current.data.montant_total || current.data.montantTotal || 0),
+        date_mouvement: new Date().toISOString(),
+        commentaire: `Commande ${current.data.id} declarée payee`,
+        reference_type: 'Commande',
+        reference_id: current.data.id,
+        externe_cle: `commande:${current.data.id}:payee`,
+      };
+    }
+
+    let tresorerieSaved = null;
+    if (tresoreriePayload && Number(tresoreriePayload.montant || 0) > 0) {
+      tresorerieSaved = await insertTresorerieCompat(apiClient, tresoreriePayload);
+      if (tresorerieSaved.error) return res.status(400).json({ message: tresorerieSaved.error.message });
+    }
+
     const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
       statut: nouveauStatut,
+      vente_comptabilisee: nouveauStatut === 'payee' ? true : current.data.vente_comptabilisee === true,
+      dernier_mouvement_tresorerie_id: tresorerieSaved?.data?.id || current.data.dernier_mouvement_tresorerie_id || null,
       historique_actions: historique,
       updated_at: new Date().toISOString(),
     });

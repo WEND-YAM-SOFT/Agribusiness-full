@@ -25,7 +25,6 @@ class _SuiviScreenState extends State<SuiviScreen> {
   List<Map<String, dynamic>> _stocksAliment = [];
   List<Map<String, dynamic>> _stocksProphylaxie = [];
   String? _selectedAlimentStockId;
-  bool _showSuiviForm = false;
 
   Map<String, dynamic>? _dashboardData;
   bool _loadingForecast = true;
@@ -166,7 +165,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            _buildForecastCard(),
+            _buildEventsPrevisionnels(),
             const SizedBox(height: 16),
 
             Row(
@@ -194,17 +193,12 @@ class _SuiviScreenState extends State<SuiviScreen> {
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: () => setState(() => _showSuiviForm = !_showSuiviForm),
-              icon: Icon(_showSuiviForm ? Icons.expand_less : Icons.edit_note),
-              label: Text(_showSuiviForm ? 'Fermer formulaire suivi jour' : 'Ouvrir formulaire suivi jour'),
+              onPressed: _showSuiviJourPopup,
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Ouvrir formulaire suivi jour'),
             ),
             const SizedBox(height: 16),
-
-            if (_showSuiviForm) _buildFormSuiviDuJour(),
-            const SizedBox(height: 20),
-
-            _buildEventsPrevisionnels(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
 
             // SUIVI JOURNALIER
             Row(
@@ -245,13 +239,32 @@ class _SuiviScreenState extends State<SuiviScreen> {
                 ),
               )),
 
+            const SizedBox(height: 24),
+            _buildForecastCard(),
+
           ],
         ),
       ),
     );
   }
 
-  Widget _buildFormSuiviDuJour() {
+  void _showSuiviJourPopup() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Formulaire suivi du jour'),
+        content: SingleChildScrollView(child: _buildFormSuiviDuJour(dialogContext: dialogContext)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormSuiviDuJour({BuildContext? dialogContext}) {
     final df = DateFormat('dd/MM/yyyy');
     return Card(
       child: Padding(
@@ -311,7 +324,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
             ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
-              onPressed: _enregistrerSuivi,
+              onPressed: () => _enregistrerSuivi(dialogContext: dialogContext),
               icon: const Icon(Icons.save),
               label: const Text('Enregistrer'),
             ),
@@ -321,7 +334,8 @@ class _SuiviScreenState extends State<SuiviScreen> {
     );
   }
 
-  Future<void> _enregistrerSuivi() async {
+  Future<void> _enregistrerSuivi({BuildContext? dialogContext}) async {
+    final dialogNavigator = dialogContext != null ? Navigator.of(dialogContext) : null;
     final alimentation = double.tryParse(_alimentationCtrl.text) ?? 0;
     final mortalite = int.tryParse(_mortaliteCtrl.text) ?? -1;
     final observations = _obsCtrl.text.trim();
@@ -354,6 +368,9 @@ class _SuiviScreenState extends State<SuiviScreen> {
       _obsCtrl.clear();
       _loadStocks();
       _loadForecast();
+      if (dialogNavigator != null) {
+        dialogNavigator.pop();
+      }
     }
   }
 

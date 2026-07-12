@@ -10,10 +10,12 @@ class Produit {
   });
 
   factory Produit.fromJson(Map<String, dynamic> json) {
+    final rawQte = json['quantite'] ?? json['qte'] ?? 0;
+    final rawPrix = json['prixUnitaire'] ?? json['prix_unitaire'] ?? json['prix'] ?? 0;
     return Produit(
-      nom: json['nom'],
-      quantite: json['quantite'],
-      prixUnitaire: (json['prixUnitaire']).toDouble(),
+      nom: (json['nom'] ?? json['designation'] ?? '').toString(),
+      quantite: rawQte is num ? rawQte.toInt() : int.tryParse(rawQte.toString()) ?? 0,
+      prixUnitaire: rawPrix is num ? rawPrix.toDouble() : double.tryParse(rawPrix.toString()) ?? 0,
     );
   }
 
@@ -44,15 +46,18 @@ class LivraisonCommande {
   });
 
   factory LivraisonCommande.fromJson(Map<String, dynamic> json) {
+    final rawFrais = json['fraisLivraison'] ?? json['frais_livraison'] ?? 0;
     return LivraisonCommande(
-      id: json['_id'],
-      dateLivraisonPrevue: DateTime.parse(json['dateLivraisonPrevue']),
+      id: (json['_id'] ?? json['id'])?.toString(),
+      dateLivraisonPrevue: DateTime.tryParse((json['dateLivraisonPrevue'] ?? json['date_livraison_prevue'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
       dateLivraisonReelle: json['dateLivraisonReelle'] != null
-          ? DateTime.parse(json['dateLivraisonReelle'])
-          : null,
-      statutLivraison: json['statutLivraison'] ?? 'planifiee',
-      fraisLivraison: (json['fraisLivraison'] ?? 0).toDouble(),
-      commentaires: json['commentaires'] ?? '',
+          ? DateTime.tryParse(json['dateLivraisonReelle'].toString())
+          : (json['date_livraison_reelle'] != null
+              ? DateTime.tryParse(json['date_livraison_reelle'].toString())
+              : null),
+      statutLivraison: (json['statutLivraison'] ?? json['statut_livraison'] ?? 'planifiee').toString(),
+      fraisLivraison: rawFrais is num ? rawFrais.toDouble() : double.tryParse(rawFrais.toString()) ?? 0,
+      commentaires: (json['commentaires'] ?? json['commentaire'] ?? '').toString(),
     );
   }
 
@@ -101,24 +106,27 @@ class Commande {
     final String clientId = clientRaw is String
         ? clientRaw
         : (clientRaw is Map<String, dynamic>
-            ? (clientRaw['_id']?.toString() ?? '')
-            : '');
+            ? (clientRaw['_id']?.toString() ?? clientRaw['id']?.toString() ?? '')
+            : (json['clientId']?.toString() ?? json['client_id']?.toString() ?? ''));
     final String clientNom = clientRaw is Map<String, dynamic>
         ? '${clientRaw['prenom'] ?? ''} ${clientRaw['nom'] ?? ''}'.trim()
-        : '';
+        : (json['clientNom'] ?? json['client_nom'] ?? '').toString();
 
     final dynamic bandeRaw = json['bande'];
     final String? bandeId = bandeRaw is String
         ? bandeRaw
-        : (bandeRaw is Map<String, dynamic> ? bandeRaw['_id']?.toString() : null);
+        : (bandeRaw is Map<String, dynamic>
+            ? bandeRaw['_id']?.toString()
+            : (json['bandeId'] ?? json['bande_id'])?.toString());
     final String bandeNom = bandeRaw is Map<String, dynamic>
         ? (bandeRaw['nom']?.toString() ?? '')
-        : '';
+        : (json['bandeNom'] ?? json['bande_nom'] ?? '').toString();
 
     final List<dynamic> produitsRaw = (json['produits'] as List<dynamic>?) ?? const [];
+    final rawMontant = json['montantTotal'] ?? json['montant_total'] ?? 0;
 
     return Commande(
-      id: json['_id'],
+      id: (json['_id'] ?? json['id'])?.toString(),
       clientId: clientId,
       clientNom: clientNom,
       bandeId: bandeId,
@@ -127,17 +135,18 @@ class Commande {
           .whereType<Map<String, dynamic>>()
           .map((p) => Produit.fromJson(p))
           .toList(),
-      montantTotal: (json['montantTotal']).toDouble(),
-      statut: json['statut'],
+      montantTotal: rawMontant is num ? rawMontant.toDouble() : double.tryParse(rawMontant.toString()) ?? 0,
+      statut: (json['statut'] ?? json['status'] ?? 'en_attente').toString(),
       dateLivraison: json['dateLivraison'] != null
-          ? DateTime.parse(json['dateLivraison'])
-          : null,
-      notes: json['notes'] ?? '',
+          ? DateTime.tryParse(json['dateLivraison'].toString())
+          : (json['date_livraison'] != null ? DateTime.tryParse(json['date_livraison'].toString()) : null),
+      notes: (json['notes'] ?? '').toString(),
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
-          : null,
-        livraisons: (json['livraisons'] as List<dynamic>? ?? const [])
-          .map((l) => LivraisonCommande.fromJson(l as Map<String, dynamic>))
+          ? DateTime.tryParse(json['createdAt'].toString())
+          : (json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null),
+      livraisons: (json['livraisons'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(LivraisonCommande.fromJson)
           .toList(),
     );
   }

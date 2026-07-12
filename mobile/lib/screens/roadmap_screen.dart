@@ -62,6 +62,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   @override
   Widget build(BuildContext context) {
     final plan = _selectedPlan;
+    final isWide = MediaQuery.of(context).size.width >= 960;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Roadmap production'),
@@ -73,90 +74,115 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
           ),
         ],
       ),
-      body: Row(
+      body: isWide
+          ? Row(
+              children: [
+                SizedBox(width: 280, child: _buildPlansPanel()),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+                    child: _buildPlanDetails(plan),
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                SizedBox(height: 250, child: _buildPlansPanel()),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: _buildPlanDetails(plan),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildPlansPanel() {
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: Column(
         children: [
-          SizedBox(
-            width: 280,
-            child: Card(
-              margin: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  ListTile(
-                    title: const Text('Plannings', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('${_plans.length}/5'),
-                    trailing: IconButton(
-                      onPressed: _plans.length >= 5 ? null : _showCreatePlanDialog,
-                      icon: const Icon(Icons.add),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: _plans.isEmpty
-                        ? const Center(child: Text('Créez votre premier planning'))
-                        : ListView.builder(
-                            itemCount: _plans.length,
-                            itemBuilder: (context, index) {
-                              final p = _plans[index];
-                              final selected = p.id == _selectedPlanId;
-                              return ListTile(
-                                selected: selected,
-                                title: Text(p.name),
-                                subtitle: Text('${DateFormat('MM/yyyy').format(p.start)} - ${DateFormat('MM/yyyy').format(p.end)}'),
-                                onTap: () => setState(() => _selectedPlanId = p.id),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
+          ListTile(
+            title: const Text('Plannings', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('${_plans.length}/5'),
+            trailing: IconButton(
+              onPressed: _plans.length >= 5 ? null : _showCreatePlanDialog,
+              icon: const Icon(Icons.add),
             ),
           ),
+          const Divider(height: 1),
           Expanded(
-            child: plan == null
-                ? const Center(child: Text('Sélectionnez ou créez un planning'))
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
-                    child: Card(
-                      child: Column(
-                        children: [
-                          ListTile(
-                            title: Text(plan.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text('Macro planning mensuel - ${DateFormat('yyyy').format(plan.start)} à ${DateFormat('yyyy').format(plan.end)}'),
-                            trailing: Wrap(
-                              spacing: 8,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: () => _showAddTaskDialog(plan, asSubtask: false),
-                                  icon: const Icon(Icons.task_alt),
-                                  label: const Text('Tâche'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: () => _showAddTaskDialog(plan, asSubtask: true),
-                                  icon: const Icon(Icons.account_tree_outlined),
-                                  label: const Text('Sous-tâche'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: () => _showHighlightDateDialog(plan),
-                                  icon: const Icon(Icons.flag),
-                                  label: const Text('Date clé'),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          _buildMonthHeader(plan),
-                          const Divider(height: 1),
-                          Expanded(
-                            child: plan.tasks.isEmpty
-                                ? const Center(child: Text('Ajoutez des tâches pour construire la roadmap'))
-                                : ListView(
-                                    padding: const EdgeInsets.all(12),
-                                    children: plan.tasks.map((t) => _buildTaskTile(t, plan)).toList(),
-                                  ),
-                          ),
-                        ],
-                      ),
+            child: _plans.isEmpty
+                ? const Center(child: Text('Créez votre premier planning'))
+                : ListView.builder(
+                    itemCount: _plans.length,
+                    itemBuilder: (context, index) {
+                      final p = _plans[index];
+                      final selected = p.id == _selectedPlanId;
+                      return ListTile(
+                        selected: selected,
+                        title: Text(p.name),
+                        subtitle: Text('${DateFormat('MM/yyyy').format(p.start)} - ${DateFormat('MM/yyyy').format(p.end)}'),
+                        onTap: () => setState(() => _selectedPlanId = p.id),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanDetails(ProductionPlan? plan) {
+    if (plan == null) return const Card(child: Center(child: Text('Sélectionnez ou créez un planning')));
+
+    return Card(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(plan.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Macro planning mensuel - ${DateFormat('yyyy').format(plan.start)} à ${DateFormat('yyyy').format(plan.end)}'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _showAddTaskDialog(plan, asSubtask: false),
+                      icon: const Icon(Icons.task_alt),
+                      label: const Text('Tâche'),
                     ),
+                    OutlinedButton.icon(
+                      onPressed: () => _showAddTaskDialog(plan, asSubtask: true),
+                      icon: const Icon(Icons.account_tree_outlined),
+                      label: const Text('Sous-tâche'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _showHighlightDateDialog(plan),
+                      icon: const Icon(Icons.flag),
+                      label: const Text('Date clé'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          _buildMonthHeader(plan),
+          const Divider(height: 1),
+          Expanded(
+            child: plan.tasks.isEmpty
+                ? const Center(child: Text('Ajoutez des tâches pour construire la roadmap'))
+                : ListView(
+                    padding: const EdgeInsets.all(12),
+                    children: plan.tasks.map((t) => _buildTaskTile(t, plan)).toList(),
                   ),
           ),
         ],
