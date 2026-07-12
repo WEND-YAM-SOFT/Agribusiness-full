@@ -261,6 +261,15 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
     return ((end.year - start.year) * 12) + (end.month - start.month) + 1;
   }
 
+  double _dateToMonthUnit(DateTime planStart, DateTime date, {bool endInclusive = false}) {
+    final planMonthStart = DateTime(planStart.year, planStart.month, 1);
+    final monthOffset = ((date.year - planMonthStart.year) * 12) + (date.month - planMonthStart.month);
+    final daysInMonth = DateTime(date.year, date.month + 1, 0).day;
+    final numerator = (date.day - 1) + (endInclusive ? 1 : 0);
+    final fraction = (numerator / daysInMonth).clamp(0.0, 1.0);
+    return monthOffset + fraction;
+  }
+
   double _monthWidth() => _baseMonthWidth * _zoom;
 
   double _timelineWidth(ProductionPlan plan) {
@@ -501,8 +510,9 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
 
   Widget _buildTaskTile(RoadmapTask task, ProductionPlan plan, {double indent = 0}) {
     final monthsTotal = _monthSpan(plan.start, plan.end);
-    final startOffset = _monthSpan(plan.start, task.start) - 1;
-    final duration = _monthSpan(task.start, task.end);
+    final startOffset = _dateToMonthUnit(plan.start, task.start).clamp(0.0, monthsTotal.toDouble());
+    final endOffset = _dateToMonthUnit(plan.start, task.end, endInclusive: true).clamp(0.0, monthsTotal.toDouble());
+    final barDuration = (endOffset - startOffset).clamp(0.12, monthsTotal.toDouble());
 
     return Card(
       margin: EdgeInsets.only(left: indent, bottom: 8),
@@ -523,38 +533,47 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   children: [
                     Positioned(
                       key: ValueKey('roadmap-bar-${task.id}'),
-                      left: _monthWidth() * startOffset.clamp(0, monthsTotal),
+                      left: _monthWidth() * startOffset,
                       top: 3,
                       child: Container(
-                        width: _monthWidth() * duration.clamp(1, monthsTotal),
+                        width: _monthWidth() * barDuration,
                         height: 18,
                         decoration: BoxDecoration(color: task.color, borderRadius: BorderRadius.circular(9)),
                       ),
                     ),
+                    ...task.milestones.map((m) {
+                      final unit = _dateToMonthUnit(plan.start, m.date).clamp(0.0, monthsTotal.toDouble());
+                      return Positioned(
+                        left: (_monthWidth() * unit) - 7,
+                        top: 1,
+                        child: Icon(Icons.flag, size: 14, color: m.color),
+                      );
+                    }),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 4),
-            Row(
+            Text('${DateFormat('dd/MM/yyyy').format(task.start)} -> ${DateFormat('dd/MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: [
-                Expanded(
-                  child: Text('${DateFormat('MM/yyyy').format(task.start)} -> ${DateFormat('MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                ),
-                IconButton(
-                  tooltip: 'Ajouter jalon',
+                OutlinedButton.icon(
                   onPressed: () => _showAddMilestoneDialog(plan, task),
-                  icon: const Icon(Icons.flag_outlined, size: 18),
+                  icon: const Icon(Icons.flag_outlined, size: 16),
+                  label: const Text('Jalon'),
                 ),
-                IconButton(
-                  tooltip: 'Modifier',
+                OutlinedButton.icon(
                   onPressed: () => _showEditTaskDialog(plan, task),
-                  icon: const Icon(Icons.edit, size: 18),
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Modifier'),
                 ),
-                IconButton(
-                  tooltip: 'Supprimer tâche',
+                OutlinedButton.icon(
                   onPressed: () => _showDeleteTaskDialog(plan, task),
-                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
+                  label: const Text('Supprimer'),
                 ),
               ],
             ),
@@ -1070,6 +1089,38 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             ),
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () {
+                final updatedMilestones = task.milestones.where((m) => m.id != milestone.id).toList();
+                final updatedTask = RoadmapTask(
+                  id: task.id,
+                  title: task.title,
+                  start: task.start,
+                  end: task.end,
+                  color: task.color,
+                  group: task.group,
+                  milestones: updatedMilestones,
+                  subTasks: task.subTasks,
+                );
+                setState(() {
+                  final idx = _plans.indexWhere((p) => p.id == plan.id);
+                  if (idx < 0) return;
+                  final current = _plans[idx];
+                  _plans[idx] = ProductionPlan(
+                    id: current.id,
+                    name: current.name,
+                    start: current.start,
+                    end: current.end,
+                    tasks: _replaceTask(current.tasks, updatedTask),
+                    highlightedDates: current.highlightedDates,
+                  );
+                });
+                _savePlans();
+                Navigator.pop(ctx);
+              },
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              label: const Text('Supprimer jalon'),
+            ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
             ElevatedButton(
               onPressed: () {

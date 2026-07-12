@@ -399,4 +399,30 @@ void main() {
     expect((barRect.width - (janRect.width + febRect.width + marRect.width)).abs(), lessThan(0.2));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Roadmap UI can create a planning', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(const MaterialApp(home: RoadmapScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Créez votre premier planning'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Nouveau planning'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nouveau planning macro'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, 'Planning Test UI');
+
+    await tester.tap(find.text('Créer'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Planning Test UI'), findsWidgets);
+    expect(find.textContaining('Macro planning mensuel'), findsOneWidget);
+  });
 }
