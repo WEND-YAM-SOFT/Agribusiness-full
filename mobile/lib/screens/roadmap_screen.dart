@@ -142,6 +142,42 @@ class ProductionPlan {
   }
 }
 
+class _RoadmapGridPainter extends CustomPainter {
+  _RoadmapGridPainter({required this.monthsTotal, required this.monthWidth});
+
+  final int monthsTotal;
+  final double monthWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final evenPaint = Paint()..color = Colors.grey.shade100;
+    final oddPaint = Paint()..color = Colors.grey.shade200;
+    final dashPaint = Paint()
+      ..color = Colors.blueGrey.shade300
+      ..strokeWidth = 1;
+
+    for (var index = 0; index < monthsTotal; index += 1) {
+      final left = monthWidth * index;
+      final rect = Rect.fromLTWH(left, 0, monthWidth, size.height);
+      canvas.drawRect(rect, index.isEven ? evenPaint : oddPaint);
+
+      if (index > 0) {
+        final x = left;
+        var y = 0.0;
+        while (y < size.height) {
+          canvas.drawLine(Offset(x, y), Offset(x, (y + 4).clamp(0, size.height)), dashPaint);
+          y += 8;
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RoadmapGridPainter oldDelegate) {
+    return oldDelegate.monthsTotal != monthsTotal || oldDelegate.monthWidth != monthWidth;
+  }
+}
+
 class RoadmapScreen extends StatefulWidget {
   const RoadmapScreen({super.key});
 
@@ -153,6 +189,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   final List<ProductionPlan> _plans = [];
   String? _selectedPlanId;
   double _zoom = 1.0;
+  static const double _baseMonthWidth = 72;
   static const String _plansPrefsKey = 'roadmap.productionPlans';
   static const String _selectedPlanPrefsKey = 'roadmap.selectedPlanId';
   static const List<Color> _taskColors = [
@@ -218,6 +255,16 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
     } else {
       await prefs.remove(_selectedPlanPrefsKey);
     }
+  }
+
+  int _monthSpan(DateTime start, DateTime end) {
+    return ((end.year - start.year) * 12) + (end.month - start.month) + 1;
+  }
+
+  double _monthWidth() => _baseMonthWidth * _zoom;
+
+  double _timelineWidth(ProductionPlan plan) {
+    return _monthSpan(plan.start, plan.end) * _monthWidth();
   }
 
   @override
@@ -378,15 +425,36 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
               ],
             ),
           ),
-          const Divider(height: 1),
-          _buildMonthHeader(plan),
-          const Divider(height: 1),
           Expanded(
             child: plan.tasks.isEmpty
                 ? const Center(child: Text('Ajoutez des tâches pour construire la roadmap'))
-                : ListView(
-                    padding: const EdgeInsets.all(12),
-                    children: plan.tasks.map((t) => _buildTaskTile(t, plan)).toList(),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final timelineWidth = _timelineWidth(plan).clamp(constraints.maxWidth, double.infinity);
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: SizedBox(
+                          width: timelineWidth,
+                          height: constraints.maxHeight,
+                          child: Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: _buildMonthHeader(plan),
+                              ),
+                              const Divider(height: 1),
+                              Expanded(
+                                child: ListView(
+                                  padding: const EdgeInsets.all(12),
+                                  children: plan.tasks.map((t) => _buildTaskTile(t, plan)).toList(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
           ),
         ],
@@ -405,19 +473,18 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
       cursor = DateTime(cursor.year, cursor.month + 1, 1);
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.all(12),
+    return SizedBox(
+      key: const ValueKey('roadmap-header-timeline'),
+      width: _timelineWidth(plan),
       child: Row(
         children: months.map((m) {
           final highlighted = plan.highlightedDates.any((d) => d.year == m.year && d.month == m.month);
           return Container(
-            width: 90 * _zoom,
-            margin: const EdgeInsets.only(right: 8),
+            key: ValueKey('roadmap-month-${m.year}-${m.month}'),
+            width: _monthWidth(),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
               color: highlighted ? Colors.amber.shade100 : Colors.blueGrey.shade50,
-              borderRadius: BorderRadius.circular(8),
               border: Border.all(color: highlighted ? Colors.amber.shade700 : Colors.blueGrey.shade200),
             ),
             child: Column(
@@ -433,9 +500,9 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   }
 
   Widget _buildTaskTile(RoadmapTask task, ProductionPlan plan, {double indent = 0}) {
-    final monthsTotal = ((plan.end.year - plan.start.year) * 12) + (plan.end.month - plan.start.month) + 1;
-    final startOffset = ((task.start.year - plan.start.year) * 12) + (task.start.month - plan.start.month);
-    final duration = ((task.end.year - task.start.year) * 12) + (task.end.month - task.start.month) + 1;
+    final monthsTotal = _monthSpan(plan.start, plan.end);
+    final startOffset = _monthSpan(plan.start, task.start) - 1;
+    final duration = _monthSpan(task.start, task.end);
 
     return Card(
       margin: EdgeInsets.only(left: indent, bottom: 8),
@@ -446,34 +513,27 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
           children: [
             Text(task.title, style: TextStyle(fontWeight: task.group ? FontWeight.w700 : FontWeight.w500)),
             const SizedBox(height: 6),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final zoomedWidth = width * _zoom;
-                final unit = zoomedWidth / (monthsTotal <= 0 ? 1 : monthsTotal);
-                final left = unit * startOffset.clamp(0, monthsTotal);
-                final barWidth = unit * duration.clamp(1, monthsTotal);
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: zoomedWidth,
-                    height: 18,
-                    child: Stack(
-                      children: [
-                        Container(height: 18, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(9))),
-                        Positioned(
-                          left: left,
-                          child: Container(
-                            width: barWidth,
-                            height: 18,
-                            decoration: BoxDecoration(color: task.color, borderRadius: BorderRadius.circular(9)),
-                          ),
-                        ),
-                      ],
+            SizedBox(
+              key: ValueKey('roadmap-task-timeline-${task.id}'),
+              width: _timelineWidth(plan),
+              height: 24,
+              child: CustomPaint(
+                painter: _RoadmapGridPainter(monthsTotal: monthsTotal, monthWidth: _monthWidth()),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      key: ValueKey('roadmap-bar-${task.id}'),
+                      left: _monthWidth() * startOffset.clamp(0, monthsTotal),
+                      top: 3,
+                      child: Container(
+                        width: _monthWidth() * duration.clamp(1, monthsTotal),
+                        height: 18,
+                        decoration: BoxDecoration(color: task.color, borderRadius: BorderRadius.circular(9)),
+                      ),
                     ),
-                  ),
-                );
-              },
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 4),
             Row(

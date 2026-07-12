@@ -256,30 +256,30 @@ class _AlertesScreenState extends State<AlertesScreen> {
                 ),
               ],
             ),
+            if (allowComplete && alerte.id != null) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _showModifierAlerteDialog(alerte),
+                    icon: const Icon(Icons.edit_outlined, color: Colors.blueGrey),
+                    label: const Text('Modifier'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () {
+                      context.read<AlertesProvider>().marquerFaite(alerte);
+                    },
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Tâche faite'),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
-        trailing: allowComplete && alerte.id != null
-            ? SizedBox(
-                width: 190,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      tooltip: 'Modifier',
-                      icon: const Icon(Icons.edit_outlined, color: Colors.blueGrey),
-                      onPressed: () => _showModifierAlerteDialog(alerte),
-                    ),
-                    TextButton.icon(
-                      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
-                      label: const Text('Tâche faite'),
-                      onPressed: () {
-                        context.read<AlertesProvider>().marquerFaite(alerte);
-                      },
-                    ),
-                  ],
-                ),
-              )
-            : null,
+        trailing: null,
         isThreeLine: true,
       ),
     );
