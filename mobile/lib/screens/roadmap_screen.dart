@@ -4,6 +4,41 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/iso_calendar_picker.dart';
 
+class RoadmapMilestone {
+  final String id;
+  final String title;
+  final DateTime date;
+  final Color color;
+
+  RoadmapMilestone({
+    required this.id,
+    required this.title,
+    required this.date,
+    required this.color,
+  });
+
+  factory RoadmapMilestone.fromJson(Map<String, dynamic> json) {
+    final colorValue = (json['color'] is int)
+        ? json['color'] as int
+        : int.tryParse((json['color'] ?? '').toString()) ?? Colors.blue.toARGB32();
+    return RoadmapMilestone(
+      id: (json['id'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      date: DateTime.tryParse((json['date'] ?? '').toString()) ?? DateTime.now(),
+      color: Color(colorValue),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'date': date.toIso8601String(),
+      'color': color.toARGB32(),
+    };
+  }
+}
+
 class RoadmapTask {
   final String id;
   final String title;
@@ -11,6 +46,7 @@ class RoadmapTask {
   final DateTime end;
   final Color color;
   final bool group;
+  final List<RoadmapMilestone> milestones;
   final List<RoadmapTask> subTasks;
 
   RoadmapTask({
@@ -20,6 +56,7 @@ class RoadmapTask {
     required this.end,
     required this.color,
     this.group = false,
+    this.milestones = const [],
     this.subTasks = const [],
   });
 
@@ -34,6 +71,10 @@ class RoadmapTask {
       end: DateTime.tryParse((json['end'] ?? '').toString()) ?? DateTime.now(),
       color: Color(colorValue),
       group: json['group'] == true,
+        milestones: (json['milestones'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(RoadmapMilestone.fromJson)
+          .toList(),
       subTasks: (json['subTasks'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(RoadmapTask.fromJson)
@@ -49,6 +90,7 @@ class RoadmapTask {
       'end': end.toIso8601String(),
       'color': color.toARGB32(),
       'group': group,
+      'milestones': milestones.map((m) => m.toJson()).toList(),
       'subTasks': subTasks.map((t) => t.toJson()).toList(),
     };
   }
@@ -430,12 +472,29 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   child: Text('${DateFormat('MM/yyyy').format(task.start)} -> ${DateFormat('MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
                 ),
                 IconButton(
+                  tooltip: 'Ajouter jalon',
+                  onPressed: () => _showAddMilestoneDialog(plan, task),
+                  icon: const Icon(Icons.flag_outlined, size: 18),
+                ),
+                IconButton(
                   tooltip: 'Modifier',
                   onPressed: () => _showEditTaskDialog(plan, task),
                   icon: const Icon(Icons.edit, size: 18),
                 ),
               ],
             ),
+            if (task.milestones.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: task.milestones.map((m) {
+                  return ActionChip(
+                    avatar: Icon(Icons.flag, size: 14, color: m.color),
+                    label: Text('${m.title} (${DateFormat('dd/MM').format(m.date)})'),
+                    onPressed: () => _showEditMilestoneDialog(plan, task, m),
+                  );
+                }).toList(),
+              ),
             if (task.subTasks.isNotEmpty) ...task.subTasks.map((s) => _buildTaskTile(s, plan, indent: indent + 16)),
           ],
         ),
@@ -584,6 +643,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                         end: g.end,
                         color: g.color,
                         group: g.group,
+                        milestones: g.milestones,
                         subTasks: [...g.subTasks, task],
                       );
                     }
@@ -763,6 +823,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   end: range.end,
                   color: selectedColor,
                   group: task.group,
+                  milestones: task.milestones,
                   subTasks: task.subTasks,
                 );
                 setState(() {
@@ -792,15 +853,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   List<RoadmapTask> _replaceTask(List<RoadmapTask> tasks, RoadmapTask updated) {
     return tasks.map((t) {
       if (t.id == updated.id) {
-        return RoadmapTask(
-          id: updated.id,
-          title: updated.title,
-          start: updated.start,
-          end: updated.end,
-          color: updated.color,
-          group: updated.group,
-          subTasks: t.subTasks,
-        );
+        return updated;
       }
       if (t.subTasks.isEmpty) return t;
       return RoadmapTask(
@@ -810,8 +863,182 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         end: t.end,
         color: t.color,
         group: t.group,
+        milestones: t.milestones,
         subTasks: _replaceTask(t.subTasks, updated),
       );
     }).toList();
+  }
+
+  Future<void> _showAddMilestoneDialog(ProductionPlan plan, RoadmapTask task) async {
+    final titleCtrl = TextEditingController();
+    DateTime date = task.start;
+    Color selectedColor = task.color;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Ajouter jalon'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Titre du jalon *')),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Date du jalon'),
+                  subtitle: Text(DateFormat('dd/MM/yyyy').format(date)),
+                  trailing: const Icon(Icons.date_range),
+                  onTap: () async {
+                    final picked = await showIsoDatePicker(
+                      context: context,
+                      initialDate: date,
+                      firstDate: plan.start,
+                      lastDate: plan.end,
+                    );
+                    if (picked != null) setDialogState(() => date = picked);
+                  },
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _taskColors
+                      .map((c) => _colorDot(c, selectedColor, () => setDialogState(() => selectedColor = c)))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () {
+                if (titleCtrl.text.trim().isEmpty) return;
+                final milestone = RoadmapMilestone(
+                  id: DateTime.now().microsecondsSinceEpoch.toString(),
+                  title: titleCtrl.text.trim(),
+                  date: date,
+                  color: selectedColor,
+                );
+                final updatedTask = RoadmapTask(
+                  id: task.id,
+                  title: task.title,
+                  start: task.start,
+                  end: task.end,
+                  color: task.color,
+                  group: task.group,
+                  milestones: [...task.milestones, milestone],
+                  subTasks: task.subTasks,
+                );
+                setState(() {
+                  final idx = _plans.indexWhere((p) => p.id == plan.id);
+                  if (idx < 0) return;
+                  final current = _plans[idx];
+                  _plans[idx] = ProductionPlan(
+                    id: current.id,
+                    name: current.name,
+                    start: current.start,
+                    end: current.end,
+                    tasks: _replaceTask(current.tasks, updatedTask),
+                    highlightedDates: current.highlightedDates,
+                  );
+                });
+                _savePlans();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Ajouter'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEditMilestoneDialog(ProductionPlan plan, RoadmapTask task, RoadmapMilestone milestone) async {
+    final titleCtrl = TextEditingController(text: milestone.title);
+    DateTime date = milestone.date;
+    Color selectedColor = milestone.color;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Modifier jalon'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Titre du jalon *')),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Date du jalon'),
+                  subtitle: Text(DateFormat('dd/MM/yyyy').format(date)),
+                  trailing: const Icon(Icons.date_range),
+                  onTap: () async {
+                    final picked = await showIsoDatePicker(
+                      context: context,
+                      initialDate: date,
+                      firstDate: plan.start,
+                      lastDate: plan.end,
+                    );
+                    if (picked != null) setDialogState(() => date = picked);
+                  },
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _taskColors
+                      .map((c) => _colorDot(c, selectedColor, () => setDialogState(() => selectedColor = c)))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () {
+                if (titleCtrl.text.trim().isEmpty) return;
+                final updatedMilestones = task.milestones.map((m) {
+                  if (m.id != milestone.id) return m;
+                  return RoadmapMilestone(
+                    id: m.id,
+                    title: titleCtrl.text.trim(),
+                    date: date,
+                    color: selectedColor,
+                  );
+                }).toList();
+                final updatedTask = RoadmapTask(
+                  id: task.id,
+                  title: task.title,
+                  start: task.start,
+                  end: task.end,
+                  color: task.color,
+                  group: task.group,
+                  milestones: updatedMilestones,
+                  subTasks: task.subTasks,
+                );
+                setState(() {
+                  final idx = _plans.indexWhere((p) => p.id == plan.id);
+                  if (idx < 0) return;
+                  final current = _plans[idx];
+                  _plans[idx] = ProductionPlan(
+                    id: current.id,
+                    name: current.name,
+                    start: current.start,
+                    end: current.end,
+                    tasks: _replaceTask(current.tasks, updatedTask),
+                    highlightedDates: current.highlightedDates,
+                  );
+                });
+                _savePlans();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
