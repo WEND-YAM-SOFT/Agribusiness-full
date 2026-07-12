@@ -98,6 +98,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                   _statusChip(provider, 'en_attente', 'En attente'),
                   _statusChip(provider, 'confirmee', 'Confirmées'),
                   _statusChip(provider, 'en_preparation', 'En préparation'),
+                  _statusChip(provider, 'livree', 'Livrées'),
                   _statusChip(provider, 'payee', 'Payées'),
                   _statusChip(provider, 'annulee', 'Annulées'),
                 ],
@@ -245,12 +246,18 @@ class _CommandesScreenState extends State<CommandesScreen> {
               runSpacing: 8,
               children: [
                 PopupMenuButton<String>(
-                  onSelected: (statut) {
-                    context.read<CommandesProvider>().mettreAJourStatut(commande.id!, statut);
+                  onSelected: (statut) async {
+                    final provider = context.read<CommandesProvider>();
+                    final ok = await provider.mettreAJourStatut(commande.id!, statut);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(ok ? 'Statut mis à jour' : 'Erreur statut commande: ${provider.lastError ?? 'cause inconnue'}')),
+                    );
                   },
                   itemBuilder: (ctx) => [
                     const PopupMenuItem(value: 'confirmee', child: Text('Confirmer')),
                     const PopupMenuItem(value: 'en_preparation', child: Text('En préparation')),
+                    const PopupMenuItem(value: 'livree', child: Text('Livrée')),
                     const PopupMenuItem(value: 'payee', child: Text('Payée')),
                     const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
                   ],

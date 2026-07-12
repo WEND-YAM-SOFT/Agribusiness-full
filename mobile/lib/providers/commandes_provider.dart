@@ -12,7 +12,17 @@ class CommandesProvider with ChangeNotifier {
   bool _isLoading = false;
   Set<String> _selectedStatuts = {};
   String _searchQuery = '';
+  String? _lastError;
   bool _filtresRestaures = false;
+
+  static const Set<String> _allowedStatuts = {
+    'en_attente',
+    'confirmee',
+    'en_preparation',
+    'livree',
+    'payee',
+    'annulee',
+  };
 
   List<Commande> get commandes => _commandes;
   bool get isLoading => _isLoading;
@@ -20,6 +30,7 @@ class CommandesProvider with ChangeNotifier {
   bool get hasAnyStatutFilter => _selectedStatuts.isNotEmpty;
   bool isStatutSelected(String statut) => _selectedStatuts.contains(statut);
   String get searchQuery => _searchQuery;
+  String? get lastError => _lastError;
   List<Commande> get commandesFiltrees {
     return _commandes.where((commande) {
       final statutOk = _selectedStatuts.isEmpty || _selectedStatuts.contains(commande.statut);
@@ -41,6 +52,7 @@ class CommandesProvider with ChangeNotifier {
   }
 
   void toggleStatut(String statut) {
+    if (!_allowedStatuts.contains(statut)) return;
     if (_selectedStatuts.contains(statut)) {
       _selectedStatuts.remove(statut);
     } else {
@@ -67,6 +79,7 @@ class CommandesProvider with ChangeNotifier {
       await _restaurerFiltres();
     }
     _isLoading = true;
+    _lastError = null;
     notifyListeners();
     try {
       final data = await ApiService.getCommandes();
@@ -80,10 +93,16 @@ class CommandesProvider with ChangeNotifier {
         }
       }
       _commandes = parsed;
+      _selectedStatuts = _selectedStatuts.where(_allowedStatuts.contains).toSet();
+      if (_selectedStatuts.isNotEmpty && _commandesFiltreesInternes().isEmpty && _commandes.isNotEmpty) {
+        _selectedStatuts.clear();
+      }
     } catch (e) {
+      _lastError = e.toString();
       debugPrint('Erreur: $e');
     }
     _isLoading = false;
+    _sauvegarderFiltres();
     notifyListeners();
   }
 
@@ -101,6 +120,7 @@ class CommandesProvider with ChangeNotifier {
       await chargerCommandes();
       return true;
     } catch (e) {
+      _lastError = e.toString();
       debugPrint('Erreur: $e');
       return false;
     }
@@ -112,6 +132,7 @@ class CommandesProvider with ChangeNotifier {
       await chargerCommandes();
       return true;
     } catch (e) {
+      _lastError = e.toString();
       debugPrint('Erreur: $e');
       return false;
     }
@@ -123,6 +144,7 @@ class CommandesProvider with ChangeNotifier {
       await chargerCommandes();
       return true;
     } catch (e) {
+      _lastError = e.toString();
       debugPrint('Erreur: $e');
       return false;
     }
@@ -137,6 +159,7 @@ class CommandesProvider with ChangeNotifier {
       await chargerCommandes();
       return true;
     } catch (e) {
+      _lastError = e.toString();
       debugPrint('Erreur: $e');
       return false;
     }
@@ -148,6 +171,7 @@ class CommandesProvider with ChangeNotifier {
       await chargerCommandes();
       return true;
     } catch (e) {
+      _lastError = e.toString();
       debugPrint('Erreur: $e');
       return false;
     }
@@ -157,9 +181,29 @@ class CommandesProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _selectedStatuts = (prefs.getStringList('commandes.selectedStatuts') ?? const []).toSet();
     _selectedStatuts.remove('toutes');
+    _selectedStatuts = _selectedStatuts.where(_allowedStatuts.contains).toSet();
     _searchQuery = prefs.getString('commandes.searchQuery') ?? '';
     _filtresRestaures = true;
     notifyListeners();
+  }
+
+  List<Commande> _commandesFiltreesInternes() {
+    return _commandes.where((commande) {
+      final statutOk = _selectedStatuts.isEmpty || _selectedStatuts.contains(commande.statut);
+      if (!statutOk) return false;
+      if (_searchQuery.trim().isEmpty) return true;
+
+      final query = _searchQuery.trim().toLowerCase();
+      final haystack = [
+        commande.clientNom,
+        commande.bandeNom,
+        commande.notes,
+        commande.statut,
+        commande.montantTotal.toStringAsFixed(0),
+        ...commande.produits.map((p) => p.nom),
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
   }
 
   Future<void> _sauvegarderFiltres() async {

@@ -110,8 +110,17 @@ class RoadmapScreen extends StatefulWidget {
 class _RoadmapScreenState extends State<RoadmapScreen> {
   final List<ProductionPlan> _plans = [];
   String? _selectedPlanId;
+  double _zoom = 1.0;
   static const String _plansPrefsKey = 'roadmap.productionPlans';
   static const String _selectedPlanPrefsKey = 'roadmap.selectedPlanId';
+  static const List<Color> _taskColors = [
+    Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFFFB8C00), Color(0xFF8E24AA), Color(0xFFE53935),
+    Color(0xFF00897B), Color(0xFFF4511E), Color(0xFF3949AB), Color(0xFF7CB342), Color(0xFF6D4C41),
+    Color(0xFF00ACC1), Color(0xFF5E35B1), Color(0xFFC0CA33), Color(0xFFD81B60), Color(0xFF546E7A),
+    Color(0xFF039BE5), Color(0xFF7E57C2), Color(0xFFFF7043), Color(0xFF26A69A), Color(0xFF8D6E63),
+    Color(0xFFEF5350), Color(0xFFAB47BC), Color(0xFF66BB6A), Color(0xFFFFCA28), Color(0xFF29B6F6),
+    Color(0xFFFF8A65), Color(0xFF9CCC65), Color(0xFF42A5F5), Color(0xFFA1887F), Color(0xFF26C6DA),
+  ];
 
   @override
   void initState() {
@@ -268,6 +277,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   runSpacing: 8,
                   children: [
                     OutlinedButton.icon(
+                      onPressed: () => _showEditPlanDialog(plan),
+                      icon: const Icon(Icons.edit_calendar),
+                      label: const Text('Modifier planning'),
+                    ),
+                    OutlinedButton.icon(
                       onPressed: () => _showAddTaskDialog(plan, asSubtask: false),
                       icon: const Icon(Icons.task_alt),
                       label: const Text('Tâche'),
@@ -281,6 +295,31 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                       onPressed: () => _showHighlightDateDialog(plan),
                       icon: const Icon(Icons.flag),
                       label: const Text('Date clé'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Zoom -',
+                      onPressed: () => setState(() => _zoom = (_zoom - 0.2).clamp(0.6, 3.0)),
+                      icon: const Icon(Icons.zoom_out),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: _zoom,
+                        min: 0.6,
+                        max: 3.0,
+                        divisions: 12,
+                        label: '${(_zoom * 100).toStringAsFixed(0)}%',
+                        onChanged: (v) => setState(() => _zoom = v),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Zoom +',
+                      onPressed: () => setState(() => _zoom = (_zoom + 0.2).clamp(0.6, 3.0)),
+                      icon: const Icon(Icons.zoom_in),
                     ),
                   ],
                 ),
@@ -321,7 +360,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         children: months.map((m) {
           final highlighted = plan.highlightedDates.any((d) => d.year == m.year && d.month == m.month);
           return Container(
-            width: 90,
+            width: 90 * _zoom,
             margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
@@ -358,29 +397,45 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
-                final unit = width / (monthsTotal <= 0 ? 1 : monthsTotal);
+                final zoomedWidth = width * _zoom;
+                final unit = zoomedWidth / (monthsTotal <= 0 ? 1 : monthsTotal);
                 final left = unit * startOffset.clamp(0, monthsTotal);
                 final barWidth = unit * duration.clamp(1, monthsTotal);
-                return SizedBox(
-                  height: 18,
-                  child: Stack(
-                    children: [
-                      Container(height: 18, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(9))),
-                      Positioned(
-                        left: left,
-                        child: Container(
-                          width: barWidth,
-                          height: 18,
-                          decoration: BoxDecoration(color: task.color, borderRadius: BorderRadius.circular(9)),
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: zoomedWidth,
+                    height: 18,
+                    child: Stack(
+                      children: [
+                        Container(height: 18, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(9))),
+                        Positioned(
+                          left: left,
+                          child: Container(
+                            width: barWidth,
+                            height: 18,
+                            decoration: BoxDecoration(color: task.color, borderRadius: BorderRadius.circular(9)),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
             ),
             const SizedBox(height: 4),
-            Text('${DateFormat('MM/yyyy').format(task.start)} -> ${DateFormat('MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('${DateFormat('MM/yyyy').format(task.start)} -> ${DateFormat('MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                ),
+                IconButton(
+                  tooltip: 'Modifier',
+                  onPressed: () => _showEditTaskDialog(plan, task),
+                  icon: const Icon(Icons.edit, size: 18),
+                ),
+              ],
+            ),
             if (task.subTasks.isNotEmpty) ...task.subTasks.map((s) => _buildTaskTile(s, plan, indent: indent + 16)),
           ],
         ),
@@ -449,7 +504,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   Future<void> _showAddTaskDialog(ProductionPlan plan, {required bool asSubtask}) async {
     final title = TextEditingController();
     DateTimeRange range = DateTimeRange(start: plan.start, end: DateTime(plan.start.year, plan.start.month + 1, 1));
-    Color selectedColor = Colors.blue;
+    Color selectedColor = _taskColors.first;
     RoadmapTask? selectedGroup;
 
     await showDialog(
@@ -489,13 +544,10 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                 ),
                 Wrap(
                   spacing: 8,
-                  children: [
-                    _colorDot(Colors.blue, selectedColor, () => setDialogState(() => selectedColor = Colors.blue)),
-                    _colorDot(Colors.green, selectedColor, () => setDialogState(() => selectedColor = Colors.green)),
-                    _colorDot(Colors.orange, selectedColor, () => setDialogState(() => selectedColor = Colors.orange)),
-                    _colorDot(Colors.purple, selectedColor, () => setDialogState(() => selectedColor = Colors.purple)),
-                    _colorDot(Colors.red, selectedColor, () => setDialogState(() => selectedColor = Colors.red)),
-                  ],
+                  runSpacing: 8,
+                  children: _taskColors
+                      .map((c) => _colorDot(c, selectedColor, () => setDialogState(() => selectedColor = c)))
+                      .toList(),
                 ),
               ],
             ),
@@ -597,5 +649,169 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
       );
     });
     _savePlans();
+  }
+
+  Future<void> _showEditPlanDialog(ProductionPlan plan) async {
+    final nameCtrl = TextEditingController(text: plan.name);
+    DateTimeRange range = DateTimeRange(start: plan.start, end: plan.end);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Modifier planning'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nom du planning *')),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Période du planning'),
+                subtitle: Text('${DateFormat('dd/MM/yyyy').format(range.start)} - ${DateFormat('dd/MM/yyyy').format(range.end)}'),
+                trailing: const Icon(Icons.date_range),
+                onTap: () async {
+                  final picked = await showIsoDateRangePicker(
+                    context: context,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+                    initialDateRange: range,
+                  );
+                  if (picked != null) setDialogState(() => range = picked);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                setState(() {
+                  final idx = _plans.indexWhere((p) => p.id == plan.id);
+                  if (idx < 0) return;
+                  final current = _plans[idx];
+                  _plans[idx] = ProductionPlan(
+                    id: current.id,
+                    name: nameCtrl.text.trim(),
+                    start: range.start,
+                    end: range.end,
+                    tasks: current.tasks,
+                    highlightedDates: current.highlightedDates,
+                  );
+                });
+                _savePlans();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEditTaskDialog(ProductionPlan plan, RoadmapTask task) async {
+    final titleCtrl = TextEditingController(text: task.title);
+    DateTimeRange range = DateTimeRange(start: task.start, end: task.end);
+    Color selectedColor = task.color;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Modifier tâche'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Titre *')),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Période de la tâche'),
+                  subtitle: Text('${DateFormat('dd/MM/yyyy').format(range.start)} - ${DateFormat('dd/MM/yyyy').format(range.end)}'),
+                  trailing: const Icon(Icons.date_range),
+                  onTap: () async {
+                    final picked = await showIsoDateRangePicker(
+                      context: context,
+                      firstDate: plan.start,
+                      lastDate: plan.end,
+                      initialDateRange: range,
+                    );
+                    if (picked != null) setDialogState(() => range = picked);
+                  },
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _taskColors
+                      .map((c) => _colorDot(c, selectedColor, () => setDialogState(() => selectedColor = c)))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () {
+                if (titleCtrl.text.trim().isEmpty) return;
+                final updated = RoadmapTask(
+                  id: task.id,
+                  title: titleCtrl.text.trim(),
+                  start: range.start,
+                  end: range.end,
+                  color: selectedColor,
+                  group: task.group,
+                  subTasks: task.subTasks,
+                );
+                setState(() {
+                  final idx = _plans.indexWhere((p) => p.id == plan.id);
+                  if (idx < 0) return;
+                  final current = _plans[idx];
+                  _plans[idx] = ProductionPlan(
+                    id: current.id,
+                    name: current.name,
+                    start: current.start,
+                    end: current.end,
+                    tasks: _replaceTask(current.tasks, updated),
+                    highlightedDates: current.highlightedDates,
+                  );
+                });
+                _savePlans();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<RoadmapTask> _replaceTask(List<RoadmapTask> tasks, RoadmapTask updated) {
+    return tasks.map((t) {
+      if (t.id == updated.id) {
+        return RoadmapTask(
+          id: updated.id,
+          title: updated.title,
+          start: updated.start,
+          end: updated.end,
+          color: updated.color,
+          group: updated.group,
+          subTasks: t.subTasks,
+        );
+      }
+      if (t.subTasks.isEmpty) return t;
+      return RoadmapTask(
+        id: t.id,
+        title: t.title,
+        start: t.start,
+        end: t.end,
+        color: t.color,
+        group: t.group,
+        subTasks: _replaceTask(t.subTasks, updated),
+      );
+    }).toList();
   }
 }
