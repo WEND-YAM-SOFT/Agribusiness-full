@@ -560,20 +560,20 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                OutlinedButton.icon(
+                IconButton(
+                  tooltip: 'Ajouter jalon',
                   onPressed: () => _showAddMilestoneDialog(plan, task),
-                  icon: const Icon(Icons.flag_outlined, size: 16),
-                  label: const Text('Jalon'),
+                  icon: const Icon(Icons.flag_outlined, size: 18),
                 ),
-                OutlinedButton.icon(
+                IconButton(
+                  tooltip: 'Modifier tâche',
                   onPressed: () => _showEditTaskDialog(plan, task),
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Modifier'),
+                  icon: const Icon(Icons.edit, size: 18),
                 ),
-                OutlinedButton.icon(
+                IconButton(
+                  tooltip: 'Supprimer tâche',
                   onPressed: () => _showDeleteTaskDialog(plan, task),
-                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
-                  label: const Text('Supprimer'),
+                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
                 ),
               ],
             ),
@@ -582,10 +582,10 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                 spacing: 6,
                 runSpacing: 6,
                 children: task.milestones.map((m) {
-                  return ActionChip(
-                    avatar: Icon(Icons.flag, size: 14, color: m.color),
-                    label: Text('${m.title} (${DateFormat('dd/MM').format(m.date)})'),
+                  return IconButton(
+                    tooltip: '${m.title} (${DateFormat('dd/MM').format(m.date)})',
                     onPressed: () => _showEditMilestoneDialog(plan, task, m),
+                    icon: Icon(Icons.flag, size: 16, color: m.color),
                   );
                 }).toList(),
               ),
