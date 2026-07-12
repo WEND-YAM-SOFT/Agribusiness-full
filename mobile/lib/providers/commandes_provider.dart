@@ -72,9 +72,9 @@ class CommandesProvider with ChangeNotifier {
       final data = await ApiService.getCommandes();
       final parsed = <Commande>[];
       for (final json in data) {
-        if (json is! Map<String, dynamic>) continue;
+        if (json is! Map) continue;
         try {
-          parsed.add(Commande.fromJson(json));
+          parsed.add(Commande.fromJson(Map<String, dynamic>.from(json)));
         } catch (e) {
           debugPrint('Commande ignorée (format invalide): $e');
         }

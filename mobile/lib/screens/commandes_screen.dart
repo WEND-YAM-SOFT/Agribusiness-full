@@ -109,6 +109,12 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    IconButton(
+                      tooltip: 'Rafraîchir',
+                      onPressed: () => context.read<CommandesProvider>().chargerCommandes(),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: _showNouvelleCommandeDialog,
                       style: ElevatedButton.styleFrom(
@@ -174,7 +180,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
         break;
       case 'livree':
         statutColor = Colors.purple;
-        statutLabel = 'En préparation';
+        statutLabel = 'Livrée';
         break;
       case 'annulee':
         statutColor = Colors.red;

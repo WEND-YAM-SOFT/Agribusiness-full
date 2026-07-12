@@ -304,6 +304,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   }
 
   Widget _buildMonthHeader(ProductionPlan plan) {
+    final localeTag = Localizations.localeOf(context).toLanguageTag();
     final months = <DateTime>[];
     final first = DateTime(plan.start.year, plan.start.month, 1);
     final last = DateTime(plan.end.year, plan.end.month, 1);
@@ -330,7 +331,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             ),
             child: Column(
               children: [
-                Text(DateFormat('MMM', 'fr').format(m).toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(DateFormat('MMM', localeTag).format(m).toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
                 Text('${m.year}', style: const TextStyle(fontSize: 11)),
               ],
             ),
