@@ -229,6 +229,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         title: const Text('Roadmap production'),
         actions: [
           IconButton(
+            onPressed: _plans.isEmpty ? null : _showDeleteAllPlansDialog,
+            icon: const Icon(Icons.delete_sweep),
+            tooltip: 'Supprimer tous les plannings',
+          ),
+          IconButton(
             onPressed: _plans.length >= 5 ? null : _showCreatePlanDialog,
             icon: const Icon(Icons.add_chart),
             tooltip: 'Nouveau planning',
@@ -287,6 +292,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                         selected: selected,
                         title: Text(p.name),
                         subtitle: Text('${DateFormat('MM/yyyy').format(p.start)} - ${DateFormat('MM/yyyy').format(p.end)}'),
+                        trailing: IconButton(
+                          tooltip: 'Supprimer planning',
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          onPressed: () => _showDeletePlanDialog(p),
+                        ),
                         onTap: () {
                           setState(() => _selectedPlanId = p.id);
                           _savePlans();
@@ -345,22 +355,22 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   children: [
                     IconButton(
                       tooltip: 'Zoom -',
-                      onPressed: () => setState(() => _zoom = (_zoom - 0.2).clamp(0.6, 3.0)),
+                      onPressed: () => setState(() => _zoom = (_zoom - 0.1).clamp(0.1, 3.0)),
                       icon: const Icon(Icons.zoom_out),
                     ),
                     Expanded(
                       child: Slider(
                         value: _zoom,
-                        min: 0.6,
+                        min: 0.1,
                         max: 3.0,
-                        divisions: 12,
+                        divisions: 29,
                         label: '${(_zoom * 100).toStringAsFixed(0)}%',
                         onChanged: (v) => setState(() => _zoom = v),
                       ),
                     ),
                     IconButton(
                       tooltip: 'Zoom +',
-                      onPressed: () => setState(() => _zoom = (_zoom + 0.2).clamp(0.6, 3.0)),
+                      onPressed: () => setState(() => _zoom = (_zoom + 0.1).clamp(0.1, 3.0)),
                       icon: const Icon(Icons.zoom_in),
                     ),
                   ],
@@ -480,6 +490,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   tooltip: 'Modifier',
                   onPressed: () => _showEditTaskDialog(plan, task),
                   icon: const Icon(Icons.edit, size: 18),
+                ),
+                IconButton(
+                  tooltip: 'Supprimer tâche',
+                  onPressed: () => _showDeleteTaskDialog(plan, task),
+                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
                 ),
               ],
             ),
@@ -1040,5 +1055,110 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showDeleteTaskDialog(ProductionPlan plan, RoadmapTask task) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer tâche'),
+        content: Text('Supprimer "${task.title}" et ses sous-tâches ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() {
+      final idx = _plans.indexWhere((p) => p.id == plan.id);
+      if (idx < 0) return;
+      final current = _plans[idx];
+      _plans[idx] = ProductionPlan(
+        id: current.id,
+        name: current.name,
+        start: current.start,
+        end: current.end,
+        tasks: _removeTask(current.tasks, task.id),
+        highlightedDates: current.highlightedDates,
+      );
+    });
+    _savePlans();
+  }
+
+  List<RoadmapTask> _removeTask(List<RoadmapTask> tasks, String taskId) {
+    final out = <RoadmapTask>[];
+    for (final t in tasks) {
+      if (t.id == taskId) continue;
+      out.add(
+        RoadmapTask(
+          id: t.id,
+          title: t.title,
+          start: t.start,
+          end: t.end,
+          color: t.color,
+          group: t.group,
+          milestones: t.milestones,
+          subTasks: _removeTask(t.subTasks, taskId),
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<void> _showDeletePlanDialog(ProductionPlan plan) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer planning'),
+        content: Text('Supprimer le planning "${plan.name}" ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() {
+      _plans.removeWhere((p) => p.id == plan.id);
+      if (_selectedPlanId == plan.id) {
+        _selectedPlanId = _plans.isEmpty ? null : _plans.first.id;
+      }
+    });
+    _savePlans();
+  }
+
+  Future<void> _showDeleteAllPlansDialog() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer tous les plannings'),
+        content: const Text('Cette action supprimera tous les plannings et toutes les tâches. Continuer ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Tout supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      _plans.clear();
+      _selectedPlanId = null;
+    });
+    _savePlans();
   }
 }

@@ -132,8 +132,8 @@ class Commande {
       bandeId: bandeId,
       bandeNom: bandeNom,
       produits: produitsRaw
-          .whereType<Map<String, dynamic>>()
-          .map((p) => Produit.fromJson(p))
+          .whereType<Map>()
+          .map((p) => Produit.fromJson(Map<String, dynamic>.from(p)))
           .toList(),
       montantTotal: rawMontant is num ? rawMontant.toDouble() : double.tryParse(rawMontant.toString()) ?? 0,
       statut: (json['statut'] ?? json['status'] ?? 'en_attente').toString(),
@@ -145,8 +145,8 @@ class Commande {
           ? DateTime.tryParse(json['createdAt'].toString())
           : (json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null),
       livraisons: (json['livraisons'] as List<dynamic>? ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .map(LivraisonCommande.fromJson)
+          .whereType<Map>()
+          .map((l) => LivraisonCommande.fromJson(Map<String, dynamic>.from(l)))
           .toList(),
     );
   }

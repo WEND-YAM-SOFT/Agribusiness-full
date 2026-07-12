@@ -4,6 +4,7 @@ const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
+const COMMANDES_COMPANY_COLUMNS = ['company_id', 'companyId'];
 
 function extractMissingColumn(error) {
   const message = (error?.message || '').toString();
@@ -99,6 +100,72 @@ function getUserName(req) {
   return { quiNom: local || 'Utilisateur', quiPrenom: local || 'Utilisateur' };
 }
 
+async function updateClientAfterCommandeCompat(apiClient, companyId, clientId, montant) {
+  let payload = {
+    dernier_contact_le: new Date().toISOString(),
+    statut: 'actif',
+    chiffre_affaires_cumul: Number(montant || 0),
+    updated_at: new Date().toISOString(),
+  };
+
+  for (let i = 0; i < 8; i += 1) {
+    let updateRes = await apiClient
+      .from('clients')
+      .update(payload)
+      .eq('id', clientId)
+      .eq('company_id', companyId);
+
+    if (!updateRes.error) return updateRes;
+
+    const missingOnCompany = extractMissingColumn(updateRes.error);
+    if (missingOnCompany === 'company_id') {
+      updateRes = await apiClient
+        .from('clients')
+        .update(payload)
+        .eq('id', clientId)
+        .eq('companyId', companyId);
+      if (!updateRes.error) return updateRes;
+      const missingWithLegacy = extractMissingColumn(updateRes.error);
+      if (missingWithLegacy && missingWithLegacy !== 'companyId') {
+        if (
+          missingWithLegacy === 'chiffre_affaires_cumul'
+          && Object.prototype.hasOwnProperty.call(payload, 'chiffre_affaires_cumul')
+          && !Object.prototype.hasOwnProperty.call(payload, 'chiffreAffairesCumul')
+        ) {
+          payload.chiffreAffairesCumul = payload.chiffre_affaires_cumul;
+          delete payload.chiffre_affaires_cumul;
+          continue;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, missingWithLegacy)) {
+          delete payload[missingWithLegacy];
+          continue;
+        }
+      }
+      return updateRes;
+    }
+
+    if (
+      missingOnCompany === 'chiffre_affaires_cumul'
+      && Object.prototype.hasOwnProperty.call(payload, 'chiffre_affaires_cumul')
+      && !Object.prototype.hasOwnProperty.call(payload, 'chiffreAffairesCumul')
+    ) {
+      payload.chiffreAffairesCumul = payload.chiffre_affaires_cumul;
+      delete payload.chiffre_affaires_cumul;
+      continue;
+    }
+
+    if (missingOnCompany && Object.prototype.hasOwnProperty.call(payload, missingOnCompany)) {
+      delete payload[missingOnCompany];
+      continue;
+    }
+
+    return updateRes;
+  }
+
+  return { error: { message: 'Mise a jour client post-commande impossible apres fallback' } };
+}
+
 async function insertCommandeCompat(apiClient, payload) {
   let candidate = { ...payload };
   let lastMissingColumn = '';
@@ -110,6 +177,22 @@ async function insertCommandeCompat(apiClient, payload) {
     const missingColumn = extractMissingColumn(result.error);
     if (!missingColumn) return result;
     lastMissingColumn = missingColumn;
+
+    if (
+      missingColumn === 'company_id'
+      && Object.prototype.hasOwnProperty.call(candidate, 'company_id')
+      && !Object.prototype.hasOwnProperty.call(candidate, 'companyId')
+    ) {
+      candidate.companyId = candidate.company_id;
+    }
+
+    if (
+      missingColumn === 'bande_id'
+      && Object.prototype.hasOwnProperty.call(candidate, 'bande_id')
+      && !Object.prototype.hasOwnProperty.call(candidate, 'bandeId')
+    ) {
+      candidate.bandeId = candidate.bande_id;
+    }
 
     if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
       return result;
@@ -129,16 +212,33 @@ async function updateCommandeCompat(apiClient, companyId, commandeId, updateObj,
   let lastMissingColumn = '';
 
   for (let i = 0; i < 15; i += 1) {
-    const query = apiClient
-      .from('commandes')
-      .update(candidate)
-      .eq('company_id', companyId)
-      .eq('id', commandeId)
-      .select('*');
-    const result = useSingle ? await query.single() : await query.maybeSingle();
-    if (!result.error) return result;
+    let result = null;
+    let hadCompatHit = false;
 
-    const missingColumn = extractMissingColumn(result.error);
+    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+      const query = apiClient
+        .from('commandes')
+        .update(candidate)
+        .eq(companyColumn, companyId)
+        .eq('id', commandeId)
+        .select('*');
+      result = useSingle ? await query.single() : await query.maybeSingle();
+      if (!result.error) return result;
+
+      const missingCompanyColumn = extractMissingColumn(result.error);
+      if (missingCompanyColumn === companyColumn) {
+        hadCompatHit = true;
+        continue;
+      }
+      break;
+    }
+
+    if (result && !result.error) return result;
+
+    const missingColumn = extractMissingColumn(result?.error);
+    if (hadCompatHit && !missingColumn) {
+      continue;
+    }
     if (!missingColumn) return result;
     lastMissingColumn = missingColumn;
 
@@ -170,6 +270,58 @@ async function updateCommandeCompat(apiClient, companyId, commandeId, updateObj,
       message: `Mise a jour commande impossible: schema incompatible apres fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
     },
   };
+}
+
+async function listCommandesCompat(apiClient, companyId, configureQuery) {
+  const rowsById = new Map();
+  let lastError = null;
+  let hadAnySuccess = false;
+
+  for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+    let query = apiClient.from('commandes').select('*').eq(companyColumn, companyId);
+    query = configureQuery ? configureQuery(query) : query;
+    const result = await query;
+
+    if (result.error) {
+      const missing = extractMissingColumn(result.error);
+      if (missing === companyColumn) {
+        continue;
+      }
+      lastError = result.error;
+      continue;
+    }
+
+    hadAnySuccess = true;
+    for (const row of result.data || []) {
+      if (row?.id) rowsById.set(row.id, row);
+    }
+  }
+
+  if (!hadAnySuccess && lastError) {
+    return { data: null, error: lastError };
+  }
+
+  return { data: [...rowsById.values()], error: null };
+}
+
+async function getCommandeCompat(apiClient, companyId, commandeId) {
+  let lastError = null;
+  for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+    const result = await apiClient
+      .from('commandes')
+      .select('*')
+      .eq(companyColumn, companyId)
+      .eq('id', commandeId)
+      .maybeSingle();
+
+    if (!result.error) return result;
+
+    const missing = extractMissingColumn(result.error);
+    if (missing === companyColumn) continue;
+    lastError = result.error;
+  }
+
+  return { data: null, error: lastError };
 }
 
 function toArray(value) {
@@ -220,11 +372,7 @@ router.get('/', async (req, res) => {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
-    const cmdRes = await client
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('created_at', { ascending: false });
+    const cmdRes = await listCommandesCompat(client, companyId, (query) => query.order('created_at', { ascending: false }));
 
     if (cmdRes.error) return res.status(500).json({ message: cmdRes.error.message });
 
@@ -243,12 +391,11 @@ router.get('/statut/:statut', async (req, res) => {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
-    const cmdRes = await client
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('statut', req.params.statut)
-      .order('created_at', { ascending: false });
+    const cmdRes = await listCommandesCompat(
+      client,
+      companyId,
+      (query) => query.eq('statut', req.params.statut).order('created_at', { ascending: false }),
+    );
 
     if (cmdRes.error) return res.status(500).json({ message: cmdRes.error.message });
 
@@ -267,12 +414,7 @@ router.get('/:id', async (req, res) => {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
-    const cmdRes = await client
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .maybeSingle();
+    const cmdRes = await getCommandeCompat(client, companyId, req.params.id);
 
     if (cmdRes.error) return res.status(500).json({ message: cmdRes.error.message });
     if (!cmdRes.data) return res.status(404).json({ message: 'Commande non trouvée' });
@@ -306,7 +448,7 @@ router.post('/', async (req, res) => {
     if (req.body.clientId) {
       const linkedClient = await apiClient
         .from('clients')
-        .select('id,nom,prenom,telephone,chiffre_affaires_cumul,statut')
+        .select('id,nom,prenom,telephone,statut')
         .eq('company_id', companyId)
         .eq('id', req.body.clientId)
         .maybeSingle();
@@ -349,17 +491,10 @@ router.post('/', async (req, res) => {
 
     if (clientSnapshot) {
       const montant = Number(payload.montant_total || 0);
-      const updateClient = await apiClient
-        .from('clients')
-        .update({
-          dernier_contact_le: new Date().toISOString(),
-          statut: 'actif',
-          chiffre_affaires_cumul: Number(clientSnapshot.chiffre_affaires_cumul || 0) + montant,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', clientSnapshot.id)
-        .eq('company_id', companyId);
-      if (updateClient.error) return res.status(400).json({ message: updateClient.error.message });
+      const updateClient = await updateClientAfterCommandeCompat(apiClient, companyId, clientSnapshot.id, montant);
+      if (updateClient.error) {
+        console.warn('updateClientAfterCommandeCompat failed:', updateClient.error.message);
+      }
     }
 
     return res.status(201).json(mapCommandeRow(inserted.data, clientSnapshot));
@@ -373,12 +508,7 @@ router.put('/:id/statut', async (req, res) => {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
-    const current = await apiClient
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .maybeSingle();
+    const current = await getCommandeCompat(apiClient, companyId, req.params.id);
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
@@ -456,12 +586,7 @@ router.post('/:id/livraisons', async (req, res) => {
       return res.status(400).json({ message: 'La date de livraison prévue est obligatoire' });
     }
 
-    const current = await apiClient
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .maybeSingle();
+    const current = await getCommandeCompat(apiClient, companyId, req.params.id);
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
@@ -505,12 +630,7 @@ router.put('/:id/livraisons/:livraisonId', async (req, res) => {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
-    const current = await apiClient
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .maybeSingle();
+    const current = await getCommandeCompat(apiClient, companyId, req.params.id);
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
@@ -553,12 +673,7 @@ router.post('/:id/commentaires', async (req, res) => {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
-    const current = await apiClient
-      .from('commandes')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .maybeSingle();
+    const current = await getCommandeCompat(apiClient, companyId, req.params.id);
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
@@ -596,12 +711,26 @@ router.get('/historique/:id', async (req, res) => {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
-    const current = await apiClient
-      .from('commandes')
-      .select('commentaires,historique_actions,created_at,updated_at')
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .maybeSingle();
+    let current = null;
+    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+      const resTry = await apiClient
+        .from('commandes')
+        .select('commentaires,historique_actions,created_at,updated_at')
+        .eq(companyColumn, companyId)
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (!resTry.error) {
+        current = resTry;
+        break;
+      }
+      const missing = extractMissingColumn(resTry.error);
+      if (missing !== companyColumn) {
+        current = resTry;
+        break;
+      }
+    }
+
+    if (!current) return res.status(500).json({ message: 'Commande introuvable (compat)' });
 
     if (current.error) return res.status(500).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
@@ -647,13 +776,27 @@ router.delete('/:id', async (req, res) => {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
-    const removed = await apiClient
-      .from('commandes')
-      .delete()
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('id')
-      .maybeSingle();
+    let removed = null;
+    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+      const result = await apiClient
+        .from('commandes')
+        .delete()
+        .eq(companyColumn, companyId)
+        .eq('id', req.params.id)
+        .select('id')
+        .maybeSingle();
+      if (!result.error) {
+        removed = result;
+        break;
+      }
+      const missing = extractMissingColumn(result.error);
+      if (missing !== companyColumn) {
+        removed = result;
+        break;
+      }
+    }
+
+    if (!removed) return res.status(500).json({ message: 'Suppression impossible (compat)' });
 
     if (removed.error) return res.status(500).json({ message: removed.error.message });
     if (!removed.data) return res.status(404).json({ message: 'Commande non trouvée' });
