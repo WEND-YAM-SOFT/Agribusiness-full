@@ -468,7 +468,7 @@ router.post('/', async (req, res) => {
     if (req.body.clientId) {
       const linkedClient = await apiClient
         .from('clients')
-        .select('id,nom,prenom,telephone,statut')
+        .select('id,nom,prenom,telephone')
         .eq('company_id', companyId)
         .eq('id', req.body.clientId)
         .maybeSingle();
