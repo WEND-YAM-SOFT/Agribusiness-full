@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/bande.dart';
 import '../providers/bandes_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class ClimatScreen extends StatefulWidget {
   final Bande bande;
@@ -92,7 +93,7 @@ class _ClimatScreenState extends State<ClimatScreen> {
             subtitle: Text(df.format(_date)),
             trailing: const Icon(Icons.calendar_today),
             onTap: () async {
-              final d = await showDatePicker(
+              final d = await showIsoDatePicker(
                 context: context,
                 initialDate: _date,
                 firstDate: DateTime(2000),

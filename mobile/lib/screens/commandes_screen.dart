@@ -5,6 +5,7 @@ import '../providers/commandes_provider.dart';
 import '../providers/clients_provider.dart';
 import '../models/commande.dart';
 import '../utils/money_format.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class CommandesScreen extends StatefulWidget {
   final bool embedded;
@@ -563,7 +564,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                   subtitle: Text(dateLivraison == null ? '-' : DateFormat('dd/MM/yyyy').format(dateLivraison!)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showIsoDatePicker(
                       context: dialogContext,
                       initialDate: dateLivraison ?? DateTime.now(),
                       firstDate: DateTime(2000),
@@ -646,7 +647,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
     final commentairesCtrl = TextEditingController();
 
     Future<void> choisirDatePrevue(StateSetter setDialogState) async {
-      final picked = await showDatePicker(
+      final picked = await showIsoDatePicker(
         context: context,
         initialDate: datePrevue,
         firstDate: DateTime(2000),
@@ -658,7 +659,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
     }
 
     Future<void> choisirDateReelle(StateSetter setDialogState) async {
-      final picked = await showDatePicker(
+      final picked = await showIsoDatePicker(
         context: context,
         initialDate: dateReelle ?? datePrevue,
         firstDate: DateTime(2000),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/stocks_provider.dart';
 import '../models/stock.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class StocksScreen extends StatefulWidget {
   const StocksScreen({super.key});
@@ -236,7 +237,7 @@ class _StocksScreenState extends State<StocksScreen> {
     DateTime dateMouvement = DateTime.now();
 
     Future<void> choisirDate(StateSetter setDialogState) async {
-      final picked = await showDatePicker(
+      final picked = await showIsoDatePicker(
         context: context,
         initialDate: dateMouvement,
         firstDate: DateTime(2000),
@@ -404,7 +405,7 @@ class _StocksScreenState extends State<StocksScreen> {
     DateTime dateStock = DateTime.now();
 
     Future<void> choisirDateStock(StateSetter setDialogState) async {
-      final picked = await showDatePicker(
+      final picked = await showIsoDatePicker(
         context: context,
         initialDate: dateStock,
         firstDate: DateTime(2000),

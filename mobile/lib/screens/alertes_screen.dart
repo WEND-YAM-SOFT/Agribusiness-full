@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/alertes_provider.dart';
 import '../models/alerte.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class AlertesScreen extends StatefulWidget {
   const AlertesScreen({super.key});
@@ -86,7 +87,7 @@ class _AlertesScreenState extends State<AlertesScreen> {
                         : 'Choisir date'),
                     selected: _dateFilter == 'date',
                     onSelected: (_) async {
-                      final picked = await showDatePicker(
+                      final picked = await showIsoDatePicker(
                         context: context,
                         initialDate: _selectedDate ?? DateTime.now(),
                         firstDate: DateTime(2000),
@@ -106,7 +107,7 @@ class _AlertesScreenState extends State<AlertesScreen> {
                         : 'Intervalle'),
                     selected: _dateFilter == 'range',
                     onSelected: (_) async {
-                      final picked = await showDateRangePicker(
+                      final picked = await showIsoDateRangePicker(
                         context: context,
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
@@ -346,7 +347,7 @@ class _AlertesScreenState extends State<AlertesScreen> {
                   subtitle: Text(DateFormat('dd/MM/yyyy').format(selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final date = await showDatePicker(
+                    final date = await showIsoDatePicker(
                       context: context,
                       initialDate: selectedDate,
                       firstDate: DateTime.now(),
@@ -432,7 +433,7 @@ class _AlertesScreenState extends State<AlertesScreen> {
                   subtitle: Text(DateFormat('dd/MM/yyyy').format(selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final date = await showDatePicker(
+                    final date = await showIsoDatePicker(
                       context: context,
                       initialDate: selectedDate,
                       firstDate: DateTime.now().subtract(const Duration(days: 365)),
@@ -451,6 +452,8 @@ class _AlertesScreenState extends State<AlertesScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (titreCtrl.text.trim().isEmpty) return;
+                final navigator = Navigator.of(ctx);
+                final messenger = ScaffoldMessenger.of(this.context);
                 final ok = await context.read<AlertesProvider>().mettreAJourAlerte(
                   alerte.id!,
                   {
@@ -462,8 +465,8 @@ class _AlertesScreenState extends State<AlertesScreen> {
                   },
                 );
                 if (!mounted) return;
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(this.context).showSnackBar(
+                navigator.pop();
+                messenger.showSnackBar(
                   SnackBar(content: Text(ok ? 'Tâche modifiée' : 'Erreur modification tâche')),
                 );
               },

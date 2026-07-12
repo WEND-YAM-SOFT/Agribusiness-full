@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/finance_provider.dart';
 import '../utils/money_format.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -321,7 +322,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Future<void> _showDateRangePicker() async {
     final provider = context.read<FinanceProvider>();
-    final picked = await showDateRangePicker(
+    final picked = await showIsoDateRangePicker(
       context: context,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
@@ -394,7 +395,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   subtitle: Text(DateFormat('dd/MM/yyyy').format(selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showIsoDatePicker(
                       context: dialogContext,
                       initialDate: selectedDate,
                       firstDate: DateTime(2000),
@@ -472,7 +473,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   subtitle: Text(DateFormat('dd/MM/yyyy').format(selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showIsoDatePicker(
                       context: dialogContext,
                       initialDate: selectedDate,
                       firstDate: DateTime(2000),

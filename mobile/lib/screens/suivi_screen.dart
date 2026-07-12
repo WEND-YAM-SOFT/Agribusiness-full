@@ -6,6 +6,7 @@ import '../models/bande.dart';
 import '../services/api_service.dart';
 import 'poids_screen.dart';
 import 'climat_screen.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class SuiviScreen extends StatefulWidget {
   final Bande bande;
@@ -266,7 +267,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
               subtitle: Text(df.format(_dateSuivi)),
               trailing: const Icon(Icons.calendar_month),
               onTap: () async {
-                final d = await showDatePicker(
+                final d = await showIsoDatePicker(
                   context: context,
                   initialDate: _dateSuivi,
                   firstDate: DateTime(2000),
@@ -448,7 +449,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
                   subtitle: Text(DateFormat('dd/MM/yyyy').format(datePrevue)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final d = await showDatePicker(
+                    final d = await showIsoDatePicker(
                       context: dialogContext,
                       initialDate: datePrevue,
                       firstDate: DateTime.now().subtract(const Duration(days: 1)),

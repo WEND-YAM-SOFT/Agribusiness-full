@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../models/bande.dart';
 import 'suivi_screen.dart';
 import 'bande_dashboard_screen.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class BandesScreen extends StatefulWidget {
   const BandesScreen({super.key});
@@ -300,7 +301,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
                   subtitle: Text(DateFormat('dd/MM/yyyy').format(dateOuverture)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showIsoDatePicker(
                       context: dialogContext,
                       initialDate: dateOuverture,
                       firstDate: DateTime(2000),
@@ -335,7 +336,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
                 if (!mounted) return;
                 if (!success) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Maximum 2 cycles ouverts en parallèle')),
+                    const SnackBar(content: Text('Maximum 5 cycles ouverts en parallèle')),
                   );
                 }
               },

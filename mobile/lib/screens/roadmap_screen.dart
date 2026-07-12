@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class RoadmapTask {
   final String id;
@@ -267,7 +268,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                 subtitle: Text('${DateFormat('dd/MM/yyyy').format(range.start)} - ${DateFormat('dd/MM/yyyy').format(range.end)}'),
                 trailing: const Icon(Icons.date_range),
                 onTap: () async {
-                  final picked = await showDateRangePicker(
+                  final picked = await showIsoDateRangePicker(
                     context: context,
                     firstDate: DateTime(2000),
                     lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
@@ -322,7 +323,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                 TextField(controller: title, decoration: const InputDecoration(labelText: 'Titre *')),
                 if (asSubtask)
                   DropdownButtonFormField<RoadmapTask>(
-                    value: selectedGroup,
+                    initialValue: selectedGroup,
                     items: plan.tasks
                         .where((t) => t.group)
                         .map((t) => DropdownMenuItem(value: t, child: Text(t.title)))
@@ -336,7 +337,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   subtitle: Text('${DateFormat('dd/MM/yyyy').format(range.start)} - ${DateFormat('dd/MM/yyyy').format(range.end)}'),
                   trailing: const Icon(Icons.date_range),
                   onTap: () async {
-                    final picked = await showDateRangePicker(
+                    final picked = await showIsoDateRangePicker(
                       context: context,
                       firstDate: plan.start,
                       lastDate: plan.end,
@@ -432,7 +433,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
   }
 
   Future<void> _showHighlightDateDialog(ProductionPlan plan) async {
-    final picked = await showDatePicker(
+    final picked = await showIsoDatePicker(
       context: context,
       initialDate: plan.start,
       firstDate: plan.start,

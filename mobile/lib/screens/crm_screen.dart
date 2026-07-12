@@ -6,6 +6,7 @@ import '../providers/clients_provider.dart';
 import '../providers/crm_provider.dart';
 import 'commandes_screen.dart';
 import '../utils/money_format.dart';
+import '../widgets/iso_calendar_picker.dart';
 
 class CrmScreen extends StatefulWidget {
   const CrmScreen({super.key});
@@ -676,22 +677,22 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                     );
                   },
                 ),
-                ListTile(
-                  title: const Text('Échéance'),
-                  subtitle: Text('${echeance.day}/${echeance.month}/${echeance.year}'),
-                  trailing: const Icon(Icons.calendar_month),
-                  onTap: () async {
-                    final d = await showDatePicker(
-                      context: context,
-                      initialDate: echeance,
-                      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                    );
-                    if (d != null) {
-                      setDialogState(() => echeance = d);
-                    }
-                  },
-                )
+                    ListTile(
+                      title: const Text('Échéance'),
+                      subtitle: Text('${echeance.day}/${echeance.month}/${echeance.year}'),
+                      trailing: const Icon(Icons.calendar_month),
+                      onTap: () async {
+                        final d = await showIsoDatePicker(
+                          context: context,
+                          initialDate: echeance,
+                          firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (d != null) {
+                          setDialogState(() => echeance = d);
+                        }
+                      },
+                    )
               ],
             ),
           ),
@@ -810,7 +811,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                   subtitle: Text('${echeance.day}/${echeance.month}/${echeance.year}'),
                   trailing: const Icon(Icons.calendar_month),
                   onTap: () async {
-                    final d = await showDatePicker(
+                    final d = await showIsoDatePicker(
                       context: context,
                       initialDate: echeance,
                       firstDate: DateTime.now().subtract(const Duration(days: 3650)),
@@ -829,6 +830,8 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
             ElevatedButton(
               onPressed: () async {
                 if (titre.text.trim().isEmpty) return;
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(this.context);
                 final ok = await this.context.read<CrmProvider>().mettreAJourTache(
                   t.id!,
                   {
@@ -844,8 +847,8 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                   },
                 );
                 if (!mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(this.context).showSnackBar(
+                navigator.pop();
+                messenger.showSnackBar(
                   SnackBar(content: Text(ok ? 'Tâche modifiée' : 'Erreur modification tâche')),
                 );
               },
