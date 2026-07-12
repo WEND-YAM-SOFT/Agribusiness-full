@@ -349,6 +349,15 @@ function toArray(value) {
 }
 
 function mapCommandeRow(row, client) {
+  const snapshotClient = row.client_snapshot
+    ? {
+        _id: row.client_snapshot._id || row.client_snapshot.id || null,
+        nom: row.client_snapshot.nom || '',
+        prenom: row.client_snapshot.prenom || '',
+        telephone: row.client_snapshot.telephone || '',
+      }
+    : null;
+
   return {
     _id: row.id,
     client: client
@@ -358,7 +367,7 @@ function mapCommandeRow(row, client) {
           prenom: client.prenom || '',
           telephone: client.telephone || '',
         }
-      : row.client_id,
+      : (snapshotClient || row.client_id),
     bande: row.bande_snapshot || row.bande_id || row.band_id || null,
     produits: toArray(row.produits),
     montantTotal: Number(row.montant_total || row.montantTotal || 0),
@@ -506,7 +515,24 @@ router.post('/', async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    const inserted = await insertCommandeCompat(apiClient, payload);
+    let inserted = await insertCommandeCompat(apiClient, payload);
+
+    if (inserted.error) {
+      const msg = (inserted.error.message || '').toString().toLowerCase();
+      const shouldRetryWithoutClient = msg.includes('clients.statut')
+        || msg.includes('clients.chiffre_affaires_cumul')
+        || msg.includes('clients.')
+        || msg.includes('trigger');
+
+      if (shouldRetryWithoutClient && payload.client_id) {
+        const fallbackPayload = {
+          ...payload,
+          client_id: null,
+        };
+        inserted = await insertCommandeCompat(apiClient, fallbackPayload);
+      }
+    }
+
     if (inserted.error) return res.status(400).json({ message: inserted.error.message });
 
     if (clientSnapshot) {
