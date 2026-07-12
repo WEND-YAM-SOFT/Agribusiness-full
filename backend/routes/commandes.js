@@ -155,6 +155,26 @@ async function updateClientAfterCommandeCompat(apiClient, companyId, clientId, m
       continue;
     }
 
+    if (
+      missingOnCompany === 'dernier_contact_le'
+      && Object.prototype.hasOwnProperty.call(payload, 'dernier_contact_le')
+      && !Object.prototype.hasOwnProperty.call(payload, 'dernierContactLe')
+    ) {
+      payload.dernierContactLe = payload.dernier_contact_le;
+      delete payload.dernier_contact_le;
+      continue;
+    }
+
+    if (
+      missingOnCompany === 'statut'
+      && Object.prototype.hasOwnProperty.call(payload, 'statut')
+      && !Object.prototype.hasOwnProperty.call(payload, 'status')
+    ) {
+      payload.status = payload.statut;
+      delete payload.statut;
+      continue;
+    }
+
     if (missingOnCompany && Object.prototype.hasOwnProperty.call(payload, missingOnCompany)) {
       delete payload[missingOnCompany];
       continue;
