@@ -523,7 +523,6 @@ router.delete('/historique/all', async (req, res) => {
       .from('alertes')
       .delete()
       .eq('company_id', companyId)
-      .eq('automatique', false)
       .in('statut', ['faite', 'ignoree']);
 
     if (deleted.error) return res.status(500).json({ message: deleted.error.message });

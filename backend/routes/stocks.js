@@ -184,7 +184,20 @@ function parseNumberInput(value) {
 }
 
 function toArray(value) {
-  return Array.isArray(value) ? value : [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function readStockMouvements(row) {
+  return toArray(row?.mouvements ?? row?.mouvement ?? row?.movements ?? []);
 }
 
 function recalculerQuantite(mouvements = []) {
@@ -227,7 +240,7 @@ function mapStockRow(row) {
     dateCreationStock: row.date_creation_stock || row.dateCreationStock || null,
     notes: row.notes || '',
     enAlerte: quantiteActuelle <= seuilAlerte,
-    mouvements: toArray(row.mouvements || row.mouvement || []),
+    mouvements: readStockMouvements(row),
     createdAt: row.created_at || row.createdAt || null,
     updatedAt: row.updated_at || row.updatedAt || null,
   };
@@ -389,7 +402,7 @@ router.post('/:id/mouvement', async (req, res) => {
     const quantite = parseNumberInput(req.body.quantite);
     if (Number.isNaN(quantite) || quantite < 0) return res.status(400).json({ message: 'Quantité invalide' });
 
-    const mouvements = toArray(stockRes.data.mouvements);
+    const mouvements = readStockMouvements(stockRes.data);
     const type = req.body.type;
     if (!['entree', 'sortie', 'ajustement'].includes(type)) {
       return res.status(400).json({ message: 'Type de mouvement invalide' });
@@ -510,7 +523,7 @@ router.delete('/:id/mouvements/:mouvementId', async (req, res) => {
     if (stockRes.error) return res.status(400).json({ message: stockRes.error.message });
     if (!stockRes.data) return res.status(404).json({ message: 'Stock non trouvé' });
 
-    const mouvements = toArray(stockRes.data.mouvements);
+    const mouvements = readStockMouvements(stockRes.data);
     const mouvement = mouvements.find((m) => String(m._id) === String(req.params.mouvementId));
     if (!mouvement) return res.status(404).json({ message: 'Mouvement non trouvé' });
 
@@ -586,7 +599,7 @@ router.get('/:id/mouvements', async (req, res) => {
     if (stockRes.error) return res.status(500).json({ message: stockRes.error.message });
     if (!stockRes.data) return res.status(404).json({ message: 'Stock non trouvé' });
 
-    const mouvements = toArray(stockRes.data.mouvements).sort((a, b) => new Date(b.date) - new Date(a.date));
+    const mouvements = readStockMouvements(stockRes.data).sort((a, b) => new Date(b.date) - new Date(a.date));
 
     return res.json({
       stockId: stockRes.data.id,
