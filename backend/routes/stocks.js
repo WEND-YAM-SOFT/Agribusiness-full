@@ -18,9 +18,98 @@ const STOCK_COLUMN_ALIASES = {
   prix_unitaire: 'prixUnitaire',
   date_creation_stock: 'dateCreationStock',
   date_expiration: 'dateExpiration',
+  mouvements: 'mouvement',
   updated_at: 'updatedAt',
   created_at: 'createdAt',
 };
+
+function toLegacyTresoreriePayload(payload) {
+  const mapped = { ...payload };
+  if (Object.prototype.hasOwnProperty.call(mapped, 'company_id')) {
+    mapped.companyId = mapped.company_id;
+    delete mapped.company_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_nom')) {
+    mapped.quiNom = mapped.qui_nom;
+    delete mapped.qui_nom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'qui_prenom')) {
+    mapped.quiPrenom = mapped.qui_prenom;
+    delete mapped.qui_prenom;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'date_mouvement')) {
+    mapped.date = mapped.date_mouvement;
+    delete mapped.date_mouvement;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_type')) {
+    mapped.referenceType = mapped.reference_type;
+    delete mapped.reference_type;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'reference_id')) {
+    mapped.referenceId = mapped.reference_id;
+    delete mapped.reference_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(mapped, 'externe_cle')) {
+    mapped.externeCle = mapped.externe_cle;
+    delete mapped.externe_cle;
+  }
+  return mapped;
+}
+
+function withCategoryHint(payload) {
+  const cloned = { ...payload };
+  const categoryHint = (cloned.categorie || '').toString().trim();
+  if (!categoryHint) return cloned;
+  const originalComment = (cloned.commentaire || '').toString().trim();
+  cloned.commentaire = `[Categorie: ${categoryHint}]${originalComment ? ` ${originalComment}` : ''}`;
+  return cloned;
+}
+
+async function insertTresorerieCompat(api, payload) {
+  let candidate = { ...payload };
+  let legacyAttempted = false;
+
+  for (let i = 0; i < 6; i += 1) {
+    const result = await api.from('tresorerie_mouvements').insert(candidate);
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+
+    if (!legacyAttempted && missingColumn.includes('_')) {
+      candidate = toLegacyTresoreriePayload(candidate);
+      legacyAttempted = true;
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    if (missingColumn === 'categorie') {
+      candidate = withCategoryHint(candidate);
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: { message: 'Insertion tresorerie impossible: schema incompatible apres tentatives de fallback' },
+  };
+}
+
+function getUserName(req) {
+  const full = (req.user?.nomComplet || req.user?.fullName || '').toString().trim();
+  if (full) {
+    const parts = full.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return { quiNom: parts[0], quiPrenom: parts[0] };
+    return { quiNom: parts.slice(1).join(' '), quiPrenom: parts[0] };
+  }
+  const email = (req.user?.email || '').toString();
+  const local = email.includes('@') ? email.split('@')[0] : email;
+  return { quiNom: local || 'Utilisateur', quiPrenom: local || 'Utilisateur' };
+}
 
 async function insertStockCompat(client, payload) {
   let candidate = { ...payload };
@@ -69,6 +158,11 @@ async function updateStockCompat(client, updateObj, companyId, stockId) {
     const missingColumn = extractMissingColumn(result.error);
     if (!missingColumn) return result;
     lastMissingColumn = missingColumn;
+
+    const alias = STOCK_COLUMN_ALIASES[missingColumn];
+    if (alias && Object.prototype.hasOwnProperty.call(candidate, missingColumn) && !Object.prototype.hasOwnProperty.call(candidate, alias)) {
+      candidate[alias] = candidate[missingColumn];
+    }
 
     if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
       return result;
@@ -349,6 +443,52 @@ router.post('/:id/mouvement', async (req, res) => {
 
     const saved = await updateStockCompat(client, updates, companyId, req.params.id);
     if (saved.error) return res.status(400).json({ message: saved.error.message });
+
+    const prevQty = Number(stockRes.data.quantite_actuelle ?? stockRes.data.quantiteActuelle ?? 0);
+    const nextQty = Number(saved.data.quantite_actuelle ?? saved.data.quantiteActuelle ?? prevQty);
+    const delta = nextQty - prevQty;
+    const unitPrice = Number(saved.data.prix_unitaire ?? saved.data.prixUnitaire ?? stockRes.data.prix_unitaire ?? 0);
+    const movementAmount = Math.abs(delta) * unitPrice;
+    if (movementAmount > 0 && type !== 'ajustement' ? true : delta !== 0) {
+      const userName = getUserName(req);
+      let nature = 'sortie';
+      let source = 'stock_entree';
+      let label = 'Approvisionnement stock';
+
+      if (type === 'sortie') {
+        nature = 'entree';
+        source = 'stock_sortie';
+        label = 'Sortie stock valorisee';
+      } else if (type === 'ajustement') {
+        if (delta < 0) {
+          nature = 'entree';
+          source = 'stock_ajustement_sortie';
+          label = 'Ajustement stock (diminution)';
+        } else {
+          nature = 'sortie';
+          source = 'stock_ajustement_entree';
+          label = 'Ajustement stock (augmentation)';
+        }
+      }
+
+      const financeSave = await insertTresorerieCompat(client, {
+        company_id: companyId,
+        nature,
+        source,
+        qui_nom: userName.quiNom,
+        qui_prenom: userName.quiPrenom,
+        categorie: saved.data.categorie || stockRes.data.categorie || 'stock',
+        type: saved.data.nom || stockRes.data.nom || 'Stock',
+        montant: movementAmount,
+        date_mouvement: new Date().toISOString(),
+        commentaire: `${label} - ${saved.data.nom || stockRes.data.nom || 'Stock'}`,
+        reference_type: 'Stock',
+        reference_id: req.params.id,
+        externe_cle: `stock:${req.params.id}:mouvement:${mouvement._id}`,
+      });
+      if (financeSave.error) return res.status(400).json({ message: financeSave.error.message });
+    }
+
     return res.json(mapStockRow(saved.data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -380,13 +520,11 @@ router.delete('/:id/mouvements/:mouvementId', async (req, res) => {
       return res.status(400).json({ message: 'Suppression impossible: le stock deviendrait négatif' });
     }
 
-    const saved = await client
-      .from('stocks')
-      .update({ mouvements: mouvementsRestants, quantite_actuelle: nouvelleQuantite, updated_at: new Date().toISOString() })
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateStockCompat(client, {
+      mouvements: mouvementsRestants,
+      quantite_actuelle: nouvelleQuantite,
+      updated_at: new Date().toISOString(),
+    }, companyId, req.params.id);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.json(mapStockRow(saved.data));
@@ -421,13 +559,10 @@ router.delete('/:id/mouvements', async (req, res) => {
       coutUnitaire: Number(stockRes.data.prix_unitaire || 0),
     };
 
-    const saved = await client
-      .from('stocks')
-      .update({ mouvements: [snapshot], updated_at: new Date().toISOString() })
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateStockCompat(client, {
+      mouvements: [snapshot],
+      updated_at: new Date().toISOString(),
+    }, companyId, req.params.id);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.json(mapStockRow(saved.data));

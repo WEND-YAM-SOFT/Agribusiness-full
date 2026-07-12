@@ -6,6 +6,7 @@ import 'stocks_screen.dart';
 import 'alertes_screen.dart';
 import 'crm_screen.dart';
 import 'finance_screen.dart';
+import 'roadmap_screen.dart';
 import 'profile_screen.dart';
 import 'config_screen.dart';
 import '../providers/auth_provider.dart';
@@ -71,6 +72,12 @@ class _HomeScreenState extends State<HomeScreen> {
       page: FinanceScreen(),
       desktopDestination: NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Tresorerie'),
       mobileDestination: NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Finance'),
+      permission: 'dashboard:view',
+    ),
+    _ModuleItem(
+      page: RoadmapScreen(),
+      desktopDestination: NavigationDestination(icon: Icon(Icons.timeline_outlined), selectedIcon: Icon(Icons.timeline), label: 'Roadmap'),
+      mobileDestination: NavigationDestination(icon: Icon(Icons.timeline_outlined), selectedIcon: Icon(Icons.timeline), label: 'Roadmap'),
       permission: 'dashboard:view',
     ),
     _ModuleItem(

@@ -24,6 +24,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
   List<Map<String, dynamic>> _stocksAliment = [];
   List<Map<String, dynamic>> _stocksProphylaxie = [];
   String? _selectedAlimentStockId;
+  bool _showSuiviForm = false;
 
   Map<String, dynamic>? _dashboardData;
   bool _loadingForecast = true;
@@ -190,9 +191,15 @@ class _SuiviScreenState extends State<SuiviScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _showSuiviForm = !_showSuiviForm),
+              icon: Icon(_showSuiviForm ? Icons.expand_less : Icons.edit_note),
+              label: Text(_showSuiviForm ? 'Fermer formulaire suivi jour' : 'Ouvrir formulaire suivi jour'),
+            ),
             const SizedBox(height: 16),
 
-            _buildFormSuiviDuJour(),
+            if (_showSuiviForm) _buildFormSuiviDuJour(),
             const SizedBox(height: 20),
 
             _buildEventsPrevisionnels(),

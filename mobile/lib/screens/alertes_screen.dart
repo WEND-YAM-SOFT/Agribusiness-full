@@ -12,9 +12,10 @@ class AlertesScreen extends StatefulWidget {
 }
 
 class _AlertesScreenState extends State<AlertesScreen> {
-  int _tabIndex = 0;
-  bool _showTodoHistory = false;
-  bool _showAutomaticHistory = false;
+  bool _showHistory = false;
+  String _dateFilter = 'all';
+  DateTime? _selectedDate;
+  DateTimeRange? _selectedRange;
 
   @override
   void initState() {
@@ -25,6 +26,28 @@ class _AlertesScreenState extends State<AlertesScreen> {
       context.read<AlertesProvider>().chargerHistoriqueAlertes();
       context.read<AlertesProvider>().chargerHistoriqueAlertesAutomatiques();
     });
+  }
+
+  bool _sameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  bool _matchesDateFilter(Alerte alerte) {
+    final d = alerte.dateEcheance;
+    if (_dateFilter == 'all') return true;
+    if (_dateFilter == 'tomorrow') {
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      return _sameDay(d, tomorrow);
+    }
+    if (_dateFilter == 'date' && _selectedDate != null) {
+      return _sameDay(d, _selectedDate!);
+    }
+    if (_dateFilter == 'range' && _selectedRange != null) {
+      final start = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day);
+      final end = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59);
+      return !d.isBefore(start) && !d.isAfter(end);
+    }
+    return true;
   }
 
   @override
@@ -39,14 +62,14 @@ class _AlertesScreenState extends State<AlertesScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Séparer les alertes en retard
           final maintenant = DateTime.now();
-          final base = _tabIndex == 0 ? provider.alertes : provider.alertesAutomatiques;
-          final historiqueTodo = provider.historiqueAlertes;
-          final historiqueAuto = provider.historiqueAlertesAutomatiques;
-          final historique = _tabIndex == 0 ? historiqueTodo : historiqueAuto;
-          final enRetard = base.where((a) => a.dateEcheance.isBefore(maintenant)).toList();
-          final aVenir = base.where((a) => !a.dateEcheance.isBefore(maintenant)).toList();
+          final base = [...provider.alertes, ...provider.alertesAutomatiques];
+          final historique = [...provider.historiqueAlertes, ...provider.historiqueAlertesAutomatiques];
+          final filtered = base.where(_matchesDateFilter).toList()
+            ..sort((a, b) => a.dateEcheance.compareTo(b.dateEcheance));
+
+          final enRetard = filtered.where((a) => a.dateEcheance.isBefore(maintenant)).toList();
+          final aVenir = filtered.where((a) => !a.dateEcheance.isBefore(maintenant)).toList();
           final isEmpty = base.isEmpty && historique.isEmpty;
 
           return ListView(
@@ -55,32 +78,63 @@ class _AlertesScreenState extends State<AlertesScreen> {
               Wrap(
                 spacing: 8,
                 children: [
+                  ChoiceChip(label: const Text('Toutes'), selected: _dateFilter == 'all', onSelected: (_) => setState(() => _dateFilter = 'all')),
+                  ChoiceChip(label: const Text('Demain'), selected: _dateFilter == 'tomorrow', onSelected: (_) => setState(() => _dateFilter = 'tomorrow')),
                   ChoiceChip(
-                    label: const Text('Todo list'),
-                    selected: _tabIndex == 0,
-                    onSelected: (_) => setState(() => _tabIndex = 0),
+                    label: Text(_dateFilter == 'date' && _selectedDate != null
+                        ? 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}'
+                        : 'Choisir date'),
+                    selected: _dateFilter == 'date',
+                    onSelected: (_) async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _selectedDate = picked;
+                          _dateFilter = 'date';
+                        });
+                      }
+                    },
                   ),
                   ChoiceChip(
-                    label: const Text('Alertes automatiques'),
-                    selected: _tabIndex == 1,
-                    onSelected: (_) => setState(() => _tabIndex = 1),
+                    label: Text(_dateFilter == 'range' && _selectedRange != null
+                        ? 'Du ${DateFormat('dd/MM').format(_selectedRange!.start)} au ${DateFormat('dd/MM').format(_selectedRange!.end)}'
+                        : 'Intervalle'),
+                    selected: _dateFilter == 'range',
+                    onSelected: (_) async {
+                      final picked = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        initialDateRange: _selectedRange,
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _selectedRange = picked;
+                          _dateFilter = 'range';
+                        });
+                      }
+                    },
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              if (_tabIndex == 0)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _periodChip(provider, 'today', 'Ma journée'),
-                    _periodChip(provider, 'week', 'Cette semaine'),
-                    _periodChip(provider, 'month', 'Ce mois'),
-                    _periodChip(provider, 'all', 'Toutes les tâches'),
-                  ],
-                ),
-              if (_tabIndex == 0) const SizedBox(height: 12),
-              if (_tabIndex == 0 && historiqueTodo.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _periodChip(provider, 'today', 'Ma journée'),
+                  _periodChip(provider, 'week', 'Cette semaine'),
+                  _periodChip(provider, 'month', 'Ce mois'),
+                  _periodChip(provider, 'all', 'Toutes les tâches'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (historique.isNotEmpty)
                 Align(
                   alignment: Alignment.centerRight,
                   child: OutlinedButton.icon(
@@ -89,7 +143,7 @@ class _AlertesScreenState extends State<AlertesScreen> {
                     label: const Text('Effacer historique'),
                   ),
                 ),
-              if (_tabIndex == 0 && historiqueTodo.isNotEmpty) const SizedBox(height: 8),
+              if (historique.isNotEmpty) const SizedBox(height: 8),
               if (isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 48),
@@ -97,22 +151,9 @@ class _AlertesScreenState extends State<AlertesScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _tabIndex == 0 ? Icons.notifications_none : Icons.auto_awesome,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
+                        const Icon(Icons.notifications_none, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
-                        Text(
-                          _tabIndex == 0 ? 'Aucune tâche active' : 'Aucune alerte automatique',
-                          style: const TextStyle(fontSize: 18, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () => setState(() => _tabIndex = _tabIndex == 0 ? 1 : 0),
-                          icon: Icon(_tabIndex == 0 ? Icons.auto_awesome : Icons.arrow_back),
-                          label: Text(_tabIndex == 0 ? 'Voir alertes automatiques' : 'Retour à Todo list'),
-                        ),
+                        const Text('Aucune tâche active', style: TextStyle(fontSize: 18, color: Colors.grey)),
                       ],
                     ),
                   ),
@@ -140,27 +181,15 @@ class _AlertesScreenState extends State<AlertesScreen> {
                 const SizedBox(height: 8),
                 ...aVenir.map((a) => _buildAlerteCard(a, enRetard: false)),
               ],
-              if (_tabIndex == 0 && historiqueTodo.isNotEmpty) ...[
+              if (historique.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 ExpansionTile(
-                  initiallyExpanded: _showTodoHistory,
-                  onExpansionChanged: (expanded) => setState(() => _showTodoHistory = expanded),
+                  initiallyExpanded: _showHistory,
+                  onExpansionChanged: (expanded) => setState(() => _showHistory = expanded),
                   leading: const Icon(Icons.history, color: Colors.blueGrey),
-                  title: Text('Historique (${historiqueTodo.length})'),
+                  title: Text('Historique (${historique.length})'),
                   children: [
-                    ...historiqueTodo.map((a) => _buildAlerteCard(a, enRetard: false, allowComplete: false)),
-                  ],
-                ),
-              ],
-              if (_tabIndex == 1 && historiqueAuto.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                ExpansionTile(
-                  initiallyExpanded: _showAutomaticHistory,
-                  onExpansionChanged: (expanded) => setState(() => _showAutomaticHistory = expanded),
-                  leading: const Icon(Icons.history, color: Colors.blueGrey),
-                  title: Text('Historique alertes automatiques (${historiqueAuto.length})'),
-                  children: [
-                    ...historiqueAuto.map((a) => _buildAlerteCard(a, enRetard: false, allowComplete: false)),
+                    ...historique.map((a) => _buildAlerteCard(a, enRetard: false, allowComplete: false)),
                   ],
                 ),
               ],
@@ -168,13 +197,11 @@ class _AlertesScreenState extends State<AlertesScreen> {
           );
         },
       ),
-      floatingActionButton: _tabIndex == 0
-          ? FloatingActionButton.extended(
-              onPressed: () => _showAjouterAlerteDialog(),
-              icon: const Icon(Icons.add_alert),
-              label: const Text('Nouvelle tâche'),
-            )
-          : null,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAjouterAlerteDialog(),
+        icon: const Icon(Icons.add_alert),
+        label: const Text('Nouvelle tâche'),
+      ),
     );
   }
 
@@ -282,7 +309,7 @@ class _AlertesScreenState extends State<AlertesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Nouvelle Alerte'),
+          title: const Text('Nouvelle tâche'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,

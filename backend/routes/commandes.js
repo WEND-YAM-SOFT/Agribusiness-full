@@ -36,6 +36,54 @@ async function insertCommandeCompat(apiClient, payload) {
   };
 }
 
+async function updateCommandeCompat(apiClient, companyId, commandeId, updateObj, useSingle = true) {
+  let candidate = { ...updateObj };
+  let lastMissingColumn = '';
+
+  for (let i = 0; i < 15; i += 1) {
+    const query = apiClient
+      .from('commandes')
+      .update(candidate)
+      .eq('company_id', companyId)
+      .eq('id', commandeId)
+      .select('*');
+    const result = useSingle ? await query.single() : await query.maybeSingle();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
+
+    if (
+      missingColumn === 'historique_actions'
+      && Object.prototype.hasOwnProperty.call(candidate, 'historique_actions')
+      && !Object.prototype.hasOwnProperty.call(candidate, 'historiqueActions')
+    ) {
+      candidate.historiqueActions = candidate.historique_actions;
+    }
+    if (
+      missingColumn === 'date_livraison'
+      && Object.prototype.hasOwnProperty.call(candidate, 'date_livraison')
+      && !Object.prototype.hasOwnProperty.call(candidate, 'dateLivraison')
+    ) {
+      candidate.dateLivraison = candidate.date_livraison;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: {
+      message: `Mise a jour commande impossible: schema incompatible apres fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
+    },
+  };
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -62,8 +110,8 @@ function mapCommandeRow(row, client) {
     livraisons: toArray(row.livraisons),
     venteComptabilisee: row.vente_comptabilisee === true,
     dernierMouvementTresorerieId: row.dernier_mouvement_tresorerie_id || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt,
   };
 }
 
@@ -258,17 +306,11 @@ router.put('/:id/statut', async (req, res) => {
       date: new Date().toISOString(),
     });
 
-    const saved = await apiClient
-      .from('commandes')
-      .update({
-        statut: nouveauStatut,
-        historique_actions: historique,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
+      statut: nouveauStatut,
+      historique_actions: historique,
+      updated_at: new Date().toISOString(),
+    });
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
 
@@ -329,13 +371,11 @@ router.post('/:id/livraisons', async (req, res) => {
       date: new Date().toISOString(),
     });
 
-    const saved = await apiClient
-      .from('commandes')
-      .update({ livraisons, historique_actions: historique, updated_at: new Date().toISOString() })
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
+      livraisons,
+      historique_actions: historique,
+      updated_at: new Date().toISOString(),
+    });
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.status(201).json(mapCommandeRow(saved.data, null));
@@ -379,13 +419,11 @@ router.put('/:id/livraisons/:livraisonId', async (req, res) => {
       date: new Date().toISOString(),
     });
 
-    const saved = await apiClient
-      .from('commandes')
-      .update({ livraisons, historique_actions: historique, updated_at: new Date().toISOString() })
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
+      livraisons,
+      historique_actions: historique,
+      updated_at: new Date().toISOString(),
+    });
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.json(mapCommandeRow(saved.data, null));
@@ -424,13 +462,11 @@ router.post('/:id/commentaires', async (req, res) => {
       date: new Date().toISOString(),
     });
 
-    const saved = await apiClient
-      .from('commandes')
-      .update({ commentaires, historique_actions: historique, updated_at: new Date().toISOString() })
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
+      commentaires,
+      historique_actions: historique,
+      updated_at: new Date().toISOString(),
+    });
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.status(201).json(mapCommandeRow(saved.data, null));
@@ -479,13 +515,7 @@ router.put('/:id', async (req, res) => {
     if (req.body.dateLivraison !== undefined) updates.date_livraison = req.body.dateLivraison;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
-    const saved = await apiClient
-      .from('commandes')
-      .update(updates)
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .maybeSingle();
+    const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, updates, false);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     if (!saved.data) return res.status(404).json({ message: 'Commande non trouvée' });

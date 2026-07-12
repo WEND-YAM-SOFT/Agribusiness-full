@@ -98,6 +98,47 @@ function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+async function updateStockCompat(api, companyId, stockId, updateObj) {
+  let candidate = { ...updateObj };
+  let lastMissingColumn = '';
+
+  for (let i = 0; i < 12; i += 1) {
+    const result = await api
+      .from('stocks')
+      .update(candidate)
+      .eq('company_id', companyId)
+      .eq('id', stockId)
+      .select('*')
+      .maybeSingle();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
+
+    if (
+      missingColumn === 'mouvements'
+      && Object.prototype.hasOwnProperty.call(candidate, 'mouvements')
+      && !Object.prototype.hasOwnProperty.call(candidate, 'mouvement')
+    ) {
+      candidate.mouvement = candidate.mouvements;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: {
+      message: `Mise a jour stock impossible: schema incompatible apres fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
+    },
+  };
+}
+
 function getUserLabel(req) {
   return req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
 }
@@ -354,8 +395,8 @@ router.post('/', async (req, res) => {
 
     const opened = await api.from('bandes').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('statut', 'ouverte');
     if (opened.error) return res.status(400).json({ message: opened.error.message });
-    if ((opened.count || 0) >= 2) {
-      return res.status(400).json({ message: 'Maximum 2 cycles ouverts en parallèle' });
+    if ((opened.count || 0) >= 5) {
+      return res.status(400).json({ message: 'Maximum 5 cycles ouverts en parallele' });
     }
 
     const dateOuverture = req.body.dateOuverture ? new Date(req.body.dateOuverture) : new Date();
@@ -506,15 +547,11 @@ router.post('/:id/suivi', async (req, res) => {
       coutUnitaire: Number(stockRes.data.prix_unitaire || 0),
     });
 
-    const stockSave = await api
-      .from('stocks')
-      .update({
-        quantite_actuelle: Number(stockRes.data.quantite_actuelle || 0) - alimentationKg,
-        mouvements: stockMouvements,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('company_id', companyId)
-      .eq('id', stockRes.data.id);
+    const stockSave = await updateStockCompat(api, companyId, stockRes.data.id, {
+      quantite_actuelle: Number(stockRes.data.quantite_actuelle || 0) - alimentationKg,
+      mouvements: stockMouvements,
+      updated_at: new Date().toISOString(),
+    });
     if (stockSave.error) return res.status(400).json({ message: stockSave.error.message });
 
     const movementAmount = alimentationKg * Number(stockRes.data.prix_unitaire || 0);

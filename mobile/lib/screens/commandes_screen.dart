@@ -16,6 +16,8 @@ class CommandesScreen extends StatefulWidget {
 
 class _CommandesScreenState extends State<CommandesScreen> {
   late final TextEditingController _searchController;
+  bool _creatingOrder = false;
+  bool _creatingClient = false;
 
   @override
   void initState() {
@@ -350,6 +352,8 @@ class _CommandesScreenState extends State<CommandesScreen> {
                     title: Text(client.nomComplet),
                     subtitle: Text(client.telephone),
                     onTap: () async {
+                      if (_creatingOrder) return;
+                      setState(() => _creatingOrder = true);
                       Navigator.pop(ctx);
                       final montant = quantite * prix;
                       final ok = await context.read<CommandesProvider>().creerCommande({
@@ -359,6 +363,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                         ],
                         'montantTotal': montant,
                       });
+                      if (mounted) setState(() => _creatingOrder = false);
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(ok ? 'Commande créée' : 'Erreur création commande')),
@@ -448,6 +453,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Annuler')),
             ElevatedButton(
               onPressed: () async {
+                if (_creatingClient) return;
                 if (prenom.text.trim().isEmpty ||
                     nom.text.trim().isEmpty ||
                     telephone.text.trim().isEmpty ||
@@ -455,6 +461,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                     activite.text.trim().isEmpty) {
                   return;
                 }
+                setState(() => _creatingClient = true);
                 final clientsProvider = rootContext.read<ClientsProvider>();
                 final navigator = Navigator.of(dialogContext);
                 final messenger = ScaffoldMessenger.of(rootContext);
@@ -472,6 +479,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 if (ok) {
                   createdClientId = newClientId;
                 }
+                if (mounted) setState(() => _creatingClient = false);
                 navigator.pop();
                 messenger.showSnackBar(
                   SnackBar(content: Text(ok ? 'Client ajouté' : 'Erreur création client')),

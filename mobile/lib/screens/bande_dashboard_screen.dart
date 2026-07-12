@@ -76,9 +76,23 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _cardChart('Courbe de croissance (réel vs théorique)', _lineChart(growth, 'poids', Colors.green, second: theoriqueGrowth, secondYKey: 'poids', secondColor: Colors.orange)),
-          _cardChart('Consommation cumulée (réel vs théorique)', _lineChart(conso, 'cumulKg', Colors.brown, second: theoriqueConso, secondYKey: 'cumulKg', secondColor: Colors.blueGrey)),
-          _cardChart('Mortalité par jour', _barChart(mortality, 'mortalite', Colors.red)),
+          _cardChart(
+            'Courbe de croissance (réel vs théorique)',
+            _lineChart(growth, 'poids', Colors.green, yUnit: 'g', second: theoriqueGrowth, secondYKey: 'poids', secondColor: Colors.orange),
+            legend: const [
+              _LegendItem('Réel', Colors.green),
+              _LegendItem('Théorique', Colors.orange),
+            ],
+          ),
+          _cardChart(
+            'Consommation cumulée (réel vs théorique)',
+            _lineChart(conso, 'cumulKg', Colors.brown, yUnit: 'kg', second: theoriqueConso, secondYKey: 'cumulKg', secondColor: Colors.blueGrey),
+            legend: const [
+              _LegendItem('Réel', Colors.brown),
+              _LegendItem('Théorique', Colors.blueGrey),
+            ],
+          ),
+          _cardChart('Mortalité par jour', _barChart(mortality, 'mortalite', Colors.red, yUnit: 'têtes/jour')),
           _forecastCard(forecast7j, eventsPrevisionnels),
         ],
       ),
@@ -145,7 +159,7 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
     );
   }
 
-  Widget _cardChart(String title, Widget chart) {
+  Widget _cardChart(String title, Widget chart, {List<_LegendItem> legend = const []}) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -154,6 +168,25 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            if (legend.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 6,
+                children: legend
+                    .map(
+                      (item) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(width: 12, height: 12, decoration: BoxDecoration(color: item.color, borderRadius: BorderRadius.circular(2))),
+                          const SizedBox(width: 6),
+                          Text(item.label),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
             const SizedBox(height: 12),
             SizedBox(height: 220, child: chart),
           ],
@@ -166,6 +199,7 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
     List<dynamic> raw,
     String yKey,
     Color color, {
+    required String yUnit,
     List<dynamic>? second,
     String? secondYKey,
     Color? secondColor,
@@ -188,6 +222,30 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
 
     return LineChart(
       LineChartData(
+        minX: 1,
+        gridData: const FlGridData(show: true),
+        borderData: FlBorderData(show: true),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            axisNameWidget: Text('Ordonnée ($yUnit)'),
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 52,
+              getTitlesWidget: (value, meta) => Text(value.toStringAsFixed(0), style: const TextStyle(fontSize: 10)),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            axisNameWidget: const Text('Abscisse (jours)'),
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 26,
+              interval: 5,
+              getTitlesWidget: (value, meta) => Text(value.toStringAsFixed(0), style: const TextStyle(fontSize: 10)),
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
         lineBarsData: [
           LineChartBarData(spots: spots, isCurved: true, color: color, barWidth: 3, dotData: const FlDotData(show: false)),
           if (secondSpots.isNotEmpty)
@@ -204,7 +262,7 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
     );
   }
 
-  Widget _barChart(List<dynamic> raw, String yKey, Color color) {
+  Widget _barChart(List<dynamic> raw, String yKey, Color color, {required String yUnit}) {
     if (raw.isEmpty) return const Center(child: Text('Pas de données'));
 
     final bars = <BarChartGroupData>[];
@@ -220,11 +278,45 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
       );
     }
 
-    return BarChart(BarChartData(barGroups: bars));
+    return BarChart(
+      BarChartData(
+        barGroups: bars,
+        gridData: const FlGridData(show: true),
+        borderData: FlBorderData(show: true),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            axisNameWidget: Text('Ordonnée ($yUnit)'),
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 64,
+              getTitlesWidget: (value, meta) => Text(value.toStringAsFixed(0), style: const TextStyle(fontSize: 10)),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            axisNameWidget: const Text('Abscisse (jours)'),
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 26,
+              interval: 5,
+              getTitlesWidget: (value, meta) => Text(value.toStringAsFixed(0), style: const TextStyle(fontSize: 10)),
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+      ),
+    );
   }
 
   String _fmt(dynamic value, {int digits = 2}) {
     if (value is num) return value.toStringAsFixed(digits);
     return '0';
   }
+}
+
+class _LegendItem {
+  final String label;
+  final Color color;
+
+  const _LegendItem(this.label, this.color);
 }
