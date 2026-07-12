@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alerte.dart';
 import '../services/api_service.dart';
 
@@ -7,8 +8,11 @@ class AlertesProvider with ChangeNotifier {
   List<Alerte> _alertesAutomatiques = [];
   List<Alerte> _historiqueAlertes = [];
   List<Alerte> _historiqueAlertesAutomatiques = [];
+  Set<String> _dismissedAutoAlertKeys = {};
   bool _isLoading = false;
   String _todoPeriod = 'all';
+
+  static const String _dismissedAutoAlertPrefsKey = 'alertes.dismissedAutoDaily';
 
   List<Alerte> get alertes => _alertes;
   List<Alerte> get alertesAutomatiques => _alertesAutomatiques;
@@ -18,6 +22,7 @@ class AlertesProvider with ChangeNotifier {
   String get todoPeriod => _todoPeriod;
 
   Future<void> chargerAlertes({String? period}) async {
+    await _loadDismissedAutoAlerts();
     _isLoading = true;
     if (period != null) {
       _todoPeriod = period;
@@ -34,11 +39,15 @@ class AlertesProvider with ChangeNotifier {
   }
 
   Future<void> chargerAlertesAutomatiques() async {
+    await _loadDismissedAutoAlerts();
     _isLoading = true;
     notifyListeners();
     try {
       final data = await ApiService.getAlertesAutomatiques();
-      _alertesAutomatiques = data.map((json) => Alerte.fromJson(json)).toList();
+      _alertesAutomatiques = data
+          .map((json) => Alerte.fromJson(json))
+          .where((a) => !_dismissedAutoAlertKeys.contains(_dismissKeyForToday(a.id)))
+          .toList();
     } catch (e) {
       debugPrint('Erreur: $e');
     }
@@ -86,6 +95,7 @@ class AlertesProvider with ChangeNotifier {
 
   Future<bool> marquerFaite(Alerte alerte) async {
     try {
+      await _loadDismissedAutoAlerts();
       await ApiService.marquerAlerteFaite(
         alerte.id ?? '',
         data: {
@@ -97,6 +107,10 @@ class AlertesProvider with ChangeNotifier {
           'source': alerte.source,
         },
       );
+      if (alerte.automatique || _isSyntheticAlerteId(alerte.id)) {
+        _dismissedAutoAlertKeys.add(_dismissKeyForToday(alerte.id));
+        await _saveDismissedAutoAlerts();
+      }
       await chargerAlertes();
       await chargerAlertesAutomatiques();
       await chargerHistoriqueAlertes();
@@ -130,5 +144,38 @@ class AlertesProvider with ChangeNotifier {
       debugPrint('Erreur: $e');
       return false;
     }
+  }
+
+  bool _isSyntheticAlerteId(String? id) {
+    if (id == null || id.isEmpty) return false;
+    return id.startsWith('stock-')
+        || id.startsWith('sanitaire-')
+        || id.startsWith('prevision-')
+        || id.startsWith('commercial-')
+        || id.startsWith('crm-task-');
+  }
+
+  String _todayStamp() {
+    final now = DateTime.now();
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$m-$d';
+  }
+
+  String _dismissKeyForToday(String? id) {
+    return '${id ?? ''}|${_todayStamp()}';
+  }
+
+  Future<void> _loadDismissedAutoAlerts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getStringList(_dismissedAutoAlertPrefsKey) ?? const [];
+    final today = _todayStamp();
+    _dismissedAutoAlertKeys = stored.where((x) => x.endsWith('|$today')).toSet();
+    await prefs.setStringList(_dismissedAutoAlertPrefsKey, _dismissedAutoAlertKeys.toList());
+  }
+
+  Future<void> _saveDismissedAutoAlerts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_dismissedAutoAlertPrefsKey, _dismissedAutoAlertKeys.toList());
   }
 }

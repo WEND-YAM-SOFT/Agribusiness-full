@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/iso_calendar_picker.dart';
 
 class RoadmapTask {
@@ -20,6 +22,36 @@ class RoadmapTask {
     this.group = false,
     this.subTasks = const [],
   });
+
+  factory RoadmapTask.fromJson(Map<String, dynamic> json) {
+    final colorValue = (json['color'] is int)
+        ? json['color'] as int
+      : int.tryParse((json['color'] ?? '').toString()) ?? Colors.blue.toARGB32();
+    return RoadmapTask(
+      id: (json['id'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      start: DateTime.tryParse((json['start'] ?? '').toString()) ?? DateTime.now(),
+      end: DateTime.tryParse((json['end'] ?? '').toString()) ?? DateTime.now(),
+      color: Color(colorValue),
+      group: json['group'] == true,
+      subTasks: (json['subTasks'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(RoadmapTask.fromJson)
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'start': start.toIso8601String(),
+      'end': end.toIso8601String(),
+      'color': color.toARGB32(),
+      'group': group,
+      'subTasks': subTasks.map((t) => t.toJson()).toList(),
+    };
+  }
 }
 
 class ProductionPlan {
@@ -38,6 +70,34 @@ class ProductionPlan {
     this.tasks = const [],
     this.highlightedDates = const [],
   });
+
+  factory ProductionPlan.fromJson(Map<String, dynamic> json) {
+    return ProductionPlan(
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      start: DateTime.tryParse((json['start'] ?? '').toString()) ?? DateTime.now(),
+      end: DateTime.tryParse((json['end'] ?? '').toString()) ?? DateTime.now(),
+      tasks: (json['tasks'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map( RoadmapTask.fromJson)
+          .toList(),
+      highlightedDates: (json['highlightedDates'] as List<dynamic>? ?? const [])
+          .map((e) => DateTime.tryParse(e.toString()))
+          .whereType<DateTime>()
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'start': start.toIso8601String(),
+      'end': end.toIso8601String(),
+      'tasks': tasks.map((t) => t.toJson()).toList(),
+      'highlightedDates': highlightedDates.map((d) => d.toIso8601String()).toList(),
+    };
+  }
 }
 
 class RoadmapScreen extends StatefulWidget {
@@ -50,6 +110,14 @@ class RoadmapScreen extends StatefulWidget {
 class _RoadmapScreenState extends State<RoadmapScreen> {
   final List<ProductionPlan> _plans = [];
   String? _selectedPlanId;
+  static const String _plansPrefsKey = 'roadmap.productionPlans';
+  static const String _selectedPlanPrefsKey = 'roadmap.selectedPlanId';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlans();
+  }
 
   ProductionPlan? get _selectedPlan {
     if (_selectedPlanId == null) return null;
@@ -57,6 +125,48 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
       if (p.id == _selectedPlanId) return p;
     }
     return null;
+  }
+
+  Future<void> _loadPlans() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_plansPrefsKey);
+    final selected = prefs.getString(_selectedPlanPrefsKey);
+
+    if (raw == null || raw.isEmpty) return;
+
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is! List) return;
+      final loaded = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(ProductionPlan.fromJson)
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _plans
+          ..clear()
+          ..addAll(loaded);
+        if (_plans.isEmpty) {
+          _selectedPlanId = null;
+        } else if (selected != null && _plans.any((p) => p.id == selected)) {
+          _selectedPlanId = selected;
+        } else {
+          _selectedPlanId = _plans.first.id;
+        }
+      });
+    } catch (_) {
+      // Ignore malformed persisted roadmap data.
+    }
+  }
+
+  Future<void> _savePlans() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_plansPrefsKey, json.encode(_plans.map((p) => p.toJson()).toList()));
+    if (_selectedPlanId != null && _selectedPlanId!.isNotEmpty) {
+      await prefs.setString(_selectedPlanPrefsKey, _selectedPlanId!);
+    } else {
+      await prefs.remove(_selectedPlanPrefsKey);
+    }
   }
 
   @override
@@ -126,7 +236,10 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                         selected: selected,
                         title: Text(p.name),
                         subtitle: Text('${DateFormat('MM/yyyy').format(p.start)} - ${DateFormat('MM/yyyy').format(p.end)}'),
-                        onTap: () => setState(() => _selectedPlanId = p.id),
+                        onTap: () {
+                          setState(() => _selectedPlanId = p.id);
+                          _savePlans();
+                        },
                       );
                     },
                   ),
@@ -321,6 +434,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                   _plans.add(plan);
                   _selectedPlanId = id;
                 });
+                _savePlans();
                 Navigator.pop(ctx);
               },
               child: const Text('Créer'),
@@ -433,6 +547,7 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                     highlightedDates: current.highlightedDates,
                   );
                 });
+                _savePlans();
                 Navigator.pop(ctx);
               },
               child: const Text('Ajouter'),
@@ -480,5 +595,6 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         highlightedDates: [...current.highlightedDates, picked],
       );
     });
+    _savePlans();
   }
 }
