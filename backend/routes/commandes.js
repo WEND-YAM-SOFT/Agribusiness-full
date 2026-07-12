@@ -345,7 +345,35 @@ async function getCommandeCompat(apiClient, companyId, commandeId) {
 }
 
 function toArray(value) {
-  return Array.isArray(value) ? value : [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function applyCommandeColumnAliases(candidate, missingColumn) {
+  if (missingColumn === 'produits' && Object.prototype.hasOwnProperty.call(candidate, 'produits')) {
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'produit')) candidate.produit = candidate.produits;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'products')) candidate.products = candidate.produits;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'items')) candidate.items = candidate.produits;
+  }
+
+  if (missingColumn === 'notes' && Object.prototype.hasOwnProperty.call(candidate, 'notes')) {
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'note')) candidate.note = candidate.notes;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'commentaire')) candidate.commentaire = candidate.notes;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'description')) candidate.description = candidate.notes;
+  }
+
+  if (missingColumn === 'montant_total' && Object.prototype.hasOwnProperty.call(candidate, 'montant_total')) {
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'montantTotal')) candidate.montantTotal = candidate.montant_total;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'amount_total')) candidate.amount_total = candidate.montant_total;
+  }
 }
 
 function mapCommandeRow(row, client) {
@@ -368,12 +396,13 @@ function mapCommandeRow(row, client) {
           telephone: client.telephone || '',
         }
       : (snapshotClient || row.client_id),
+
     bande: row.bande_snapshot || row.bande_id || row.band_id || null,
-    produits: toArray(row.produits),
-    montantTotal: Number(row.montant_total || row.montantTotal || 0),
+    produits: toArray(row.produits || row.produit || row.products || row.items),
+    montantTotal: Number(row.montant_total || row.montantTotal || row.amount_total || 0),
     statut: row.statut,
     dateLivraison: row.date_livraison || row.dateLivraison,
-    notes: row.notes || '',
+    notes: row.notes || row.note || row.commentaire || row.description || '',
     commentaires: toArray(row.commentaires || row.comments),
     historiqueActions: toArray(row.historique_actions || row.historiqueActions),
     livraisons: toArray(row.livraisons),
