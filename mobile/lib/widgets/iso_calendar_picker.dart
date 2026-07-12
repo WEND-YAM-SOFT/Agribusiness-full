@@ -68,11 +68,17 @@ class _IsoDatePickerDialogState extends State<_IsoDatePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context).toLanguageTag();
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final width = MediaQuery.of(context).size.width;
+    final dialogWidth = width > 560 ? 420.0 : width - 36;
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       title: Text(widget.title),
       content: SizedBox(
-        width: 380,
+        width: dialogWidth,
         child: TableCalendar<void>(
           locale: locale,
           firstDay: DateTime(widget.firstDate.year, widget.firstDate.month, widget.firstDate.day),
@@ -92,16 +98,36 @@ class _IsoDatePickerDialogState extends State<_IsoDatePickerDialog> {
           onPageChanged: (focusedDay) {
             _focusedDay = focusedDay;
           },
-          headerStyle: const HeaderStyle(
+          headerStyle: HeaderStyle(
             formatButtonVisible: false,
             titleCentered: true,
+            titleTextStyle: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700) ?? const TextStyle(fontWeight: FontWeight.w700),
+            leftChevronIcon: Icon(Icons.chevron_left, color: cs.primary),
+            rightChevronIcon: Icon(Icons.chevron_right, color: cs.primary),
           ),
-          calendarStyle: const CalendarStyle(
+          daysOfWeekStyle: DaysOfWeekStyle(
+            weekdayStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600) ?? const TextStyle(fontWeight: FontWeight.w600),
+            weekendStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: cs.error) ?? TextStyle(fontWeight: FontWeight.w700, color: cs.error),
+          ),
+          calendarStyle: CalendarStyle(
             outsideDaysVisible: true,
+            weekendTextStyle: TextStyle(color: cs.error),
+            selectedDecoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+            todayDecoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.35), shape: BoxShape.circle),
+            weekNumberTextStyle: theme.textTheme.bodySmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w700) ?? TextStyle(color: cs.primary, fontWeight: FontWeight.w700),
           ),
         ),
       ),
       actions: [
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _selectedDay = DateTime.now();
+              _focusedDay = _selectedDay;
+            });
+          },
+          child: const Text('Aujourd\'hui'),
+        ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Annuler'),
@@ -148,11 +174,17 @@ class _IsoDateRangePickerDialogState extends State<_IsoDateRangePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context).toLanguageTag();
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final width = MediaQuery.of(context).size.width;
+    final dialogWidth = width > 560 ? 420.0 : width - 36;
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       title: Text(widget.title),
       content: SizedBox(
-        width: 380,
+        width: dialogWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -178,13 +210,29 @@ class _IsoDateRangePickerDialogState extends State<_IsoDateRangePickerDialog> {
               onPageChanged: (focusedDay) {
                 _focusedDay = focusedDay;
               },
-              headerStyle: const HeaderStyle(
+              headerStyle: HeaderStyle(
                 formatButtonVisible: false,
                 titleCentered: true,
+                titleTextStyle: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700) ?? const TextStyle(fontWeight: FontWeight.w700),
+                leftChevronIcon: Icon(Icons.chevron_left, color: cs.primary),
+                rightChevronIcon: Icon(Icons.chevron_right, color: cs.primary),
               ),
-              calendarStyle: const CalendarStyle(
+              daysOfWeekStyle: DaysOfWeekStyle(
+                weekdayStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600) ?? const TextStyle(fontWeight: FontWeight.w600),
+                weekendStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: cs.error) ?? TextStyle(fontWeight: FontWeight.w700, color: cs.error),
+              ),
+              calendarStyle: CalendarStyle(
                 outsideDaysVisible: true,
-                rangeHighlightColor: Color(0x332196F3),
+                weekendTextStyle: TextStyle(color: cs.error),
+                rangeHighlightColor: cs.primary.withValues(alpha: 0.15),
+                rangeStartDecoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+                rangeEndDecoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+                withinRangeDecoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                todayDecoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.35), shape: BoxShape.circle),
+                weekNumberTextStyle: theme.textTheme.bodySmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w700) ?? TextStyle(color: cs.primary, fontWeight: FontWeight.w700),
               ),
             ),
             const SizedBox(height: 8),
@@ -200,6 +248,26 @@ class _IsoDateRangePickerDialogState extends State<_IsoDateRangePickerDialog> {
         ),
       ),
       actions: [
+        TextButton(
+          onPressed: () {
+            final now = DateTime.now();
+            setState(() {
+              _rangeStart = now;
+              _rangeEnd = now;
+              _focusedDay = now;
+            });
+          },
+          child: const Text('Aujourd\'hui'),
+        ),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _rangeStart = null;
+              _rangeEnd = null;
+            });
+          },
+          child: const Text('Réinitialiser'),
+        ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Annuler'),
