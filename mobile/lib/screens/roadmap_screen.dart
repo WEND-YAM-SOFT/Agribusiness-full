@@ -521,7 +521,10 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(task.title, style: TextStyle(fontWeight: task.group ? FontWeight.w700 : FontWeight.w500)),
+            GestureDetector(
+              onLongPress: () => _showTaskActionsSheet(plan, task),
+              child: Text(task.title, style: TextStyle(fontWeight: task.group ? FontWeight.w700 : FontWeight.w500)),
+            ),
             const SizedBox(height: 6),
             SizedBox(
               key: ValueKey('roadmap-task-timeline-${task.id}'),
@@ -546,7 +549,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                       return Positioned(
                         left: (_monthWidth() * unit) - 7,
                         top: 1,
-                        child: Icon(Icons.flag, size: 14, color: m.color),
+                        child: GestureDetector(
+                          onTap: () => _showEditMilestoneDialog(plan, task, m),
+                          onLongPress: () => _showDeleteMilestoneDialog(plan, task, m),
+                          child: Icon(Icons.flag, size: 14, color: m.color),
+                        ),
                       );
                     }),
                   ],
@@ -556,39 +563,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             const SizedBox(height: 4),
             Text('${DateFormat('dd/MM/yyyy').format(task.start)} -> ${DateFormat('dd/MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                IconButton(
-                  tooltip: 'Ajouter jalon',
-                  onPressed: () => _showAddMilestoneDialog(plan, task),
-                  icon: const Icon(Icons.flag_outlined, size: 18),
-                ),
-                IconButton(
-                  tooltip: 'Modifier tâche',
-                  onPressed: () => _showEditTaskDialog(plan, task),
-                  icon: const Icon(Icons.edit, size: 18),
-                ),
-                IconButton(
-                  tooltip: 'Supprimer tâche',
-                  onPressed: () => _showDeleteTaskDialog(plan, task),
-                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                ),
-              ],
+            IconButton(
+              tooltip: 'Ajouter jalon',
+              onPressed: () => _showAddMilestoneDialog(plan, task),
+              icon: const Icon(Icons.flag_outlined, size: 18),
             ),
-            if (task.milestones.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: task.milestones.map((m) {
-                  return IconButton(
-                    tooltip: '${m.title} (${DateFormat('dd/MM').format(m.date)})',
-                    onPressed: () => _showEditMilestoneDialog(plan, task, m),
-                    icon: Icon(Icons.flag, size: 16, color: m.color),
-                  );
-                }).toList(),
-              ),
             if (task.subTasks.isNotEmpty) ...task.subTasks.map((s) => _buildTaskTile(s, plan, indent: indent + 16)),
           ],
         ),
@@ -1196,6 +1175,81 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         start: current.start,
         end: current.end,
         tasks: _removeTask(current.tasks, task.id),
+        highlightedDates: current.highlightedDates,
+      );
+    });
+    _savePlans();
+  }
+
+  Future<void> _showTaskActionsSheet(ProductionPlan plan, RoadmapTask task) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Modifier tâche'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showEditTaskDialog(plan, task);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: const Text('Supprimer tâche'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showDeleteTaskDialog(plan, task);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDeleteMilestoneDialog(ProductionPlan plan, RoadmapTask task, RoadmapMilestone milestone) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer jalon'),
+        content: Text('Supprimer le jalon "${milestone.title}" ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    final updatedTask = RoadmapTask(
+      id: task.id,
+      title: task.title,
+      start: task.start,
+      end: task.end,
+      color: task.color,
+      group: task.group,
+      milestones: task.milestones.where((m) => m.id != milestone.id).toList(),
+      subTasks: task.subTasks,
+    );
+
+    setState(() {
+      final idx = _plans.indexWhere((p) => p.id == plan.id);
+      if (idx < 0) return;
+      final current = _plans[idx];
+      _plans[idx] = ProductionPlan(
+        id: current.id,
+        name: current.name,
+        start: current.start,
+        end: current.end,
+        tasks: _replaceTask(current.tasks, updatedTask),
         highlightedDates: current.highlightedDates,
       );
     });
