@@ -234,6 +234,26 @@ class _CommandesScreenState extends State<CommandesScreen> {
     final produitPrincipal = commande.produits.isNotEmpty ? commande.produits.first : null;
     final nomProduit = (produitPrincipal?.nom ?? 'Produit').toUpperCase();
     final quantiteTotale = commande.produits.fold<int>(0, (sum, p) => sum + p.quantite);
+    final derniereLivraison = commande.livraisons.isNotEmpty ? commande.livraisons.last : null;
+    String livraisonStatutLabel = '-';
+    if (derniereLivraison != null) {
+      switch (derniereLivraison.statutLivraison) {
+        case 'planifiee':
+          livraisonStatutLabel = 'Planifiee';
+          break;
+        case 'en_cours':
+          livraisonStatutLabel = 'En cours';
+          break;
+        case 'livree':
+          livraisonStatutLabel = 'Livree';
+          break;
+        default:
+          livraisonStatutLabel = derniereLivraison.statutLivraison;
+      }
+    }
+    final montantLivraison = commande.fraisLivraisonTotal > 0
+        ? commande.fraisLivraisonTotal
+        : (derniereLivraison?.fraisLivraison ?? 0);
     final dateCommande = commande.createdAt != null
         ? DateFormat('dd/MM/yyyy').format(commande.createdAt!)
         : '-';
@@ -272,13 +292,11 @@ class _CommandesScreenState extends State<CommandesScreen> {
               'Quantité: ${formatAmount(quantiteTotale)} | Montant: ${formatAmountFcfa(commande.montantTotal)}',
               style: const TextStyle(color: Colors.grey),
             ),
-            if (commande.fraisLivraisonTotal > 0)
+            if (derniereLivraison != null)
               Text(
-                'Frais livraison: ${formatAmountFcfa(commande.fraisLivraisonTotal)}',
+                'Livraison: $livraisonStatutLabel | Montant livraison: ${formatAmountFcfa(montantLivraison)}',
                 style: const TextStyle(color: Colors.grey),
               ),
-            if (commande.livraisons.isNotEmpty)
-              Text('Livraisons: ${commande.livraisons.length}', style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.end,
