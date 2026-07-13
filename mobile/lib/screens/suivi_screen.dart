@@ -19,6 +19,7 @@ class SuiviScreen extends StatefulWidget {
 class _SuiviScreenState extends State<SuiviScreen> {
   final TextEditingController _alimentationCtrl = TextEditingController();
   final TextEditingController _mortaliteCtrl = TextEditingController(text: '0');
+  final TextEditingController _mortaliteObsCtrl = TextEditingController();
   final TextEditingController _eauCtrl = TextEditingController();
   final TextEditingController _obsCtrl = TextEditingController();
   DateTime _dateSuivi = DateTime.now();
@@ -43,6 +44,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
   void dispose() {
     _alimentationCtrl.dispose();
     _mortaliteCtrl.dispose();
+    _mortaliteObsCtrl.dispose();
     _eauCtrl.dispose();
     _obsCtrl.dispose();
     super.dispose();
@@ -168,34 +170,35 @@ class _SuiviScreenState extends State<SuiviScreen> {
             _buildEventsPrevisionnels(),
             const SizedBox(height: 16),
 
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => PoidsScreen(bande: bande)));
-                    },
-                    icon: const Icon(Icons.monitor_weight),
-                    label: const Text('Enregistrer prise de poids'),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => PoidsScreen(bande: bande)));
+                  },
+                  icon: const Icon(Icons.monitor_weight),
+                  label: const Text('Prise de poids'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => ClimatScreen(bande: bande)));
-                    },
-                    icon: const Icon(Icons.thermostat),
-                    label: const Text('Température/Humidité'),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: _showSuiviJourPopup,
+                  icon: const Icon(Icons.restaurant),
+                  label: const Text('Suivi alimentation'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showMortalitePopup,
+                  icon: const Icon(Icons.health_and_safety),
+                  label: const Text('Mortalité'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ClimatScreen(bande: bande)));
+                  },
+                  icon: const Icon(Icons.thermostat),
+                  label: const Text('Température/Humidité'),
                 ),
               ],
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _showSuiviJourPopup,
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Ouvrir formulaire suivi jour'),
             ),
             const SizedBox(height: 16),
             const SizedBox(height: 8),
@@ -253,7 +256,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Formulaire suivi du jour'),
+          title: const Text('Formulaire suivi alimentation'),
           content: SingleChildScrollView(
             child: _buildFormSuiviDuJour(
               dialogContext: dialogContext,
@@ -279,7 +282,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Formulaire "Suivi du jour"', style: Theme.of(context).textTheme.titleMedium),
+            Text('Formulaire "Suivi alimentation"', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -321,11 +324,6 @@ class _SuiviScreenState extends State<SuiviScreen> {
               decoration: const InputDecoration(labelText: 'Type d\'alimentation *'),
             ),
             TextField(
-              controller: _mortaliteCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Mortalité *'),
-            ),
-            TextField(
               controller: _obsCtrl,
               maxLines: 2,
               decoration: const InputDecoration(labelText: 'Observations *'),
@@ -350,11 +348,10 @@ class _SuiviScreenState extends State<SuiviScreen> {
   Future<void> _enregistrerSuivi({BuildContext? dialogContext}) async {
     final dialogNavigator = dialogContext != null ? Navigator.of(dialogContext) : null;
     final alimentation = double.tryParse(_alimentationCtrl.text) ?? 0;
-    final mortalite = int.tryParse(_mortaliteCtrl.text) ?? -1;
     final observations = _obsCtrl.text.trim();
-    if (alimentation <= 0 || mortalite < 0 || observations.isEmpty || _selectedAlimentStockId == null || _selectedAlimentStockId!.isEmpty) {
+    if (alimentation <= 0 || observations.isEmpty || _selectedAlimentStockId == null || _selectedAlimentStockId!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Renseigne les champs obligatoires du suivi du jour, y compris le type d\'alimentation')),
+        const SnackBar(content: Text('Renseigne les champs obligatoires du suivi alimentation, y compris le type d\'alimentation')),
       );
       return;
     }
@@ -365,7 +362,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
       'alimentationKg': alimentation,
       'alimentationStockId': _selectedAlimentStockId,
       'alimentationType': alimentationType,
-      'mortaliteJour': mortalite,
+      'mortaliteJour': 0,
       'eauLitres': double.tryParse(_eauCtrl.text) ?? 0,
       'observations': observations,
     });
@@ -376,10 +373,112 @@ class _SuiviScreenState extends State<SuiviScreen> {
     );
     if (ok) {
       _alimentationCtrl.clear();
-      _mortaliteCtrl.text = '0';
       _eauCtrl.clear();
       _obsCtrl.clear();
       _loadStocks();
+      _loadForecast();
+      if (dialogNavigator != null) {
+        dialogNavigator.pop();
+      }
+    }
+  }
+
+  void _showMortalitePopup() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Formulaire mortalité'),
+          content: SingleChildScrollView(
+            child: _buildFormMortalite(
+              dialogContext: dialogContext,
+              setDialogState: setDialogState,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormMortalite({BuildContext? dialogContext, StateSetter? setDialogState}) {
+    final df = DateFormat('dd/MM/yyyy');
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Formulaire "Mortalité"', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Date de déclaration'),
+              subtitle: Text(df.format(_dateSuivi)),
+              trailing: const Icon(Icons.calendar_month),
+              onTap: () async {
+                final d = await showIsoDatePicker(
+                  context: dialogContext ?? context,
+                  initialDate: _dateSuivi,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime.now().add(const Duration(days: 30)),
+                );
+                if (d != null) {
+                  setState(() => _dateSuivi = d);
+                  setDialogState?.call(() {});
+                }
+              },
+            ),
+            TextField(
+              controller: _mortaliteCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Mortalité du jour *'),
+            ),
+            TextField(
+              controller: _mortaliteObsCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'Observations (optionnel)'),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: () => _enregistrerMortalite(dialogContext: dialogContext),
+              icon: const Icon(Icons.save),
+              label: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _enregistrerMortalite({BuildContext? dialogContext}) async {
+    final dialogNavigator = dialogContext != null ? Navigator.of(dialogContext) : null;
+    final mortalite = int.tryParse(_mortaliteCtrl.text) ?? -1;
+    if (mortalite <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La mortalité du jour doit être supérieure à 0')),
+      );
+      return;
+    }
+
+    final ok = await context.read<BandesProvider>().ajouterMortalite(widget.bande.id!, {
+      'date': _dateSuivi.toIso8601String(),
+      'mortaliteJour': mortalite,
+      'observations': _mortaliteObsCtrl.text.trim(),
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Mortalité enregistrée' : 'Erreur enregistrement mortalité')),
+    );
+    if (ok) {
+      _mortaliteCtrl.text = '0';
+      _mortaliteObsCtrl.clear();
       _loadForecast();
       if (dialogNavigator != null) {
         dialogNavigator.pop();

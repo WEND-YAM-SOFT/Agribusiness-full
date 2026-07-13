@@ -244,9 +244,14 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
 
     try {
       final decoded = json.decode(raw);
-      if (decoded is! List) return;
-      final loaded = decoded
-          .whereType<Map<String, dynamic>>()
+      final dynamic rawPlans = decoded is List
+          ? decoded
+          : (decoded is Map ? decoded['plans'] : null);
+      if (rawPlans is! List) return;
+
+      final loaded = rawPlans
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
           .map(ProductionPlan.fromJson)
           .toList();
       if (!mounted) return;
@@ -409,6 +414,16 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                       ),
                     ),
                     IconButton(
+                      tooltip: 'Ajouter tâche, sous-tâche, jalon ou date clé',
+                      onPressed: () => _showRoadmapCreateMenu(plan),
+                      icon: const Icon(Icons.add_task_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Modifier période du planning',
+                      onPressed: () => _showEditPlanDialog(plan),
+                      icon: const Icon(Icons.edit_calendar_outlined),
+                    ),
+                    IconButton(
                       tooltip: 'Modifier tâche, sous-tâche, jalon ou date clé',
                       onPressed: () => _showRoadmapActionMenu(plan, _RoadmapActionMode.edit),
                       icon: const Icon(Icons.edit_outlined),
@@ -417,23 +432,6 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                       tooltip: 'Supprimer tâche, sous-tâche, jalon ou date clé',
                       onPressed: () => _showRoadmapActionMenu(plan, _RoadmapActionMode.delete),
                       icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _showEditPlanDialog(plan),
-                      icon: const Icon(Icons.edit_calendar),
-                      label: const Text('Modifier planning'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _showRoadmapCreateMenu(plan),
-                      icon: const Icon(Icons.task_alt),
-                      label: const Text('Ajouter'),
                     ),
                   ],
                 ),
@@ -588,8 +586,6 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text('${DateFormat('dd/MM/yyyy').format(task.start)} -> ${DateFormat('dd/MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
             if (task.subTasks.isNotEmpty) ...task.subTasks.map((s) => _buildTaskTile(s, plan, indent: indent + 16)),
           ],
         ),

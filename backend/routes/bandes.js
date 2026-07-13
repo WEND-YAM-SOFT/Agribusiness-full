@@ -140,10 +140,23 @@ async function updateStockCompat(api, companyId, stockId, updateObj) {
 }
 
 function getUserLabel(req) {
+  const prenom = (req.user?.prenom || '').toString().trim();
+  const nom = (req.user?.nom || '').toString().trim();
+  const full = `${prenom} ${nom}`.trim();
+  if (full) return full;
   return req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
 }
 
 function getUserName(req) {
+  const prenom = (req.user?.prenom || '').toString().trim();
+  const nom = (req.user?.nom || '').toString().trim();
+  if (prenom || nom) {
+    return {
+      quiNom: nom || prenom,
+      quiPrenom: prenom || nom,
+    };
+  }
+
   const full = (req.user?.nomComplet || req.user?.fullName || '').toString().trim();
   if (full) {
     const parts = full.split(/\s+/).filter(Boolean);
@@ -574,6 +587,59 @@ router.post('/:id/suivi', async (req, res) => {
       });
       if (financeSave.error) return res.status(400).json({ message: financeSave.error.message });
     }
+
+    const saved = await api
+      .from('bandes')
+      .update({
+        suivi_journalier: suivis,
+        mortalite_totale: newMortalite,
+        nombre_actuel: newNombreActuel,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('company_id', companyId)
+      .eq('id', bande._id)
+      .select('*')
+      .single();
+
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+    return res.status(201).json(mapBandeRow(saved.data));
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+});
+
+router.post('/:id/mortalite', async (req, res) => {
+  try {
+    const mortaliteJour = Number(req.body.mortaliteJour);
+    const observations = (req.body.observations || '').toString().trim();
+
+    if (Number.isNaN(mortaliteJour) || mortaliteJour <= 0) {
+      return res.status(400).json({ message: 'La mortalité du jour doit être supérieure à 0' });
+    }
+
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+    const bandeRow = await getBandeOr404(api, companyId, req.params.id, res);
+    if (!bandeRow) return undefined;
+    const bande = mapBandeRow(bandeRow);
+
+    const suivi = {
+      _id: crypto.randomUUID(),
+      date: isoOrNow(req.body.date),
+      poidsMotenG: 0,
+      mortaliteJour,
+      alimentationKg: 0,
+      alimentationStockId: null,
+      alimentationType: '',
+      eauLitres: 0,
+      temperature: 0,
+      humidite: 0,
+      observations: observations || 'Déclaration de mortalité',
+    };
+
+    const suivis = [...bande.suiviJournalier, suivi];
+    const newMortalite = Number(bande.mortaliteTotale || 0) + mortaliteJour;
+    const newNombreActuel = Math.max(0, Number(bande.nombreActuel || 0) - mortaliteJour);
 
     const saved = await api
       .from('bandes')

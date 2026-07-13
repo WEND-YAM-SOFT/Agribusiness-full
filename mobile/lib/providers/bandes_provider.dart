@@ -93,6 +93,17 @@ class BandesProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> ajouterMortalite(String bandeId, Map<String, dynamic> data) async {
+    try {
+      await ApiService.ajouterMortalite(bandeId, data);
+      await chargerBandesActives();
+      return true;
+    } catch (e) {
+      debugPrint('Erreur: $e');
+      return false;
+    }
+  }
+
   Future<bool> ajouterEvenementSante(String bandeId, Map<String, dynamic> data) async {
     try {
       await ApiService.ajouterEvenementSante(bandeId, data);

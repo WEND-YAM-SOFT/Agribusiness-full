@@ -207,13 +207,11 @@ router.get('/automatiques', async (req, res) => {
       });
     }
 
-    const dueDate = new Date(maintenant.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
     const tachesRes = await api
       .from('crm_taches')
       .select('id,titre,description,date_echeance,priorite,statut,client_id')
       .eq('company_id', companyId)
       .in('statut', ['a_faire', 'en_cours'])
-      .lte('date_echeance', dueDate)
       .order('date_echeance', { ascending: true });
     if (tachesRes.error) return res.status(500).json({ message: tachesRes.error.message });
 

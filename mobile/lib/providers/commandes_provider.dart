@@ -161,7 +161,6 @@ class CommandesProvider with ChangeNotifier {
     try {
       await ApiService.ajouterCommentaireCommande(id, {
         'message': message,
-        'auteur': 'Utilisateur'
       });
       await chargerCommandes();
       return true;

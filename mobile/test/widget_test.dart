@@ -426,7 +426,8 @@ void main() {
 
     expect(find.text('Planning Test UI'), findsWidgets);
     expect(find.textContaining('Macro planning mensuel'), findsOneWidget);
-    expect(find.text('Ajouter'), findsOneWidget);
+    expect(find.byTooltip('Ajouter tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
+    expect(find.byTooltip('Modifier période du planning'), findsOneWidget);
     expect(find.byTooltip('Modifier tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
     expect(find.byTooltip('Supprimer tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
   });
@@ -450,7 +451,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: SuiviScreen(bande: bande)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Ouvrir formulaire suivi jour'));
+    await tester.tap(find.text('Suivi alimentation'));
     await tester.pumpAndSettle();
 
     expect(find.text('13/07/2026'), findsOneWidget);
@@ -464,7 +465,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('15/07/2026'), findsOneWidget);
-    expect(find.text('Formulaire suivi du jour'), findsOneWidget);
+    expect(find.text('Formulaire suivi alimentation'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

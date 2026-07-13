@@ -100,6 +100,15 @@ async function insertTresorerieCompat(api, payload) {
 }
 
 function getUserName(req) {
+  const prenom = (req.user?.prenom || '').toString().trim();
+  const nom = (req.user?.nom || '').toString().trim();
+  if (prenom || nom) {
+    return {
+      quiNom: nom || prenom,
+      quiPrenom: prenom || nom,
+    };
+  }
+
   const full = (req.user?.nomComplet || req.user?.fullName || '').toString().trim();
   if (full) {
     const parts = full.split(/\s+/).filter(Boolean);
@@ -109,6 +118,14 @@ function getUserName(req) {
   const email = (req.user?.email || '').toString();
   const local = email.includes('@') ? email.split('@')[0] : email;
   return { quiNom: local || 'Utilisateur', quiPrenom: local || 'Utilisateur' };
+}
+
+function getActorLabel(req) {
+  const prenom = (req.user?.prenom || '').toString().trim();
+  const nom = (req.user?.nom || '').toString().trim();
+  const full = `${prenom} ${nom}`.trim();
+  if (full) return full;
+  return req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
 }
 
 async function insertStockCompat(client, payload) {
@@ -341,7 +358,7 @@ router.post('/', async (req, res) => {
 
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
-    const auteur = req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
+    const auteur = getActorLabel(req);
 
     const mouvementCreation = {
       _id: crypto.randomUUID(),
@@ -408,7 +425,7 @@ router.post('/:id/mouvement', async (req, res) => {
       return res.status(400).json({ message: 'Type de mouvement invalide' });
     }
 
-    const auteur = req.user?.email || req.user?.nomComplet || req.user?.nom || 'Utilisateur';
+    const auteur = getActorLabel(req);
     const coutUnitaireSaisi = req.body.coutUnitaire ?? req.body.prixUnitaire;
     const coutUnitaire = parseNumberInput(coutUnitaireSaisi);
 

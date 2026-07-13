@@ -94,6 +94,15 @@ async function insertTresorerieCompat(api, payload) {
 }
 
 function getUserName(req) {
+  const prenom = (req.user?.prenom || '').toString().trim();
+  const nom = (req.user?.nom || '').toString().trim();
+  if (prenom || nom) {
+    return {
+      quiNom: nom || prenom,
+      quiPrenom: prenom || nom,
+    };
+  }
+
   const full = (req.user?.nomComplet || req.user?.fullName || '').toString().trim();
   if (full) {
     const parts = full.split(/\s+/).filter(Boolean);
@@ -103,6 +112,51 @@ function getUserName(req) {
   const email = (req.user?.email || '').toString();
   const local = email.includes('@') ? email.split('@')[0] : email;
   return { quiNom: local || 'Utilisateur', quiPrenom: local || 'Utilisateur' };
+}
+
+function getActorLabel(req) {
+  const prenom = (req.user?.prenom || '').toString().trim();
+  const nom = (req.user?.nom || '').toString().trim();
+  const full = `${prenom} ${nom}`.trim();
+  if (full) return full;
+
+  const profileName = (req.user?.nomComplet || req.user?.fullName || '').toString().trim();
+  if (profileName) return profileName;
+
+  const email = (req.user?.email || '').toString().trim();
+  if (!email) return 'Utilisateur';
+  return email.includes('@') ? email.split('@')[0] : email;
+}
+
+function computeProduitsTotal(row) {
+  const produits = toArray(row?.produits || row?.produit || row?.products || row?.items);
+  if (!produits.length) {
+    return Number(row?.montant_total || row?.montantTotal || row?.amount_total || 0);
+  }
+
+  return produits.reduce((sum, p) => {
+    const qte = Number(p?.quantite || p?.qte || 0);
+    const prix = Number(p?.prixUnitaire || p?.prix_unitaire || p?.prix || 0);
+    return sum + (qte * prix);
+  }, 0);
+}
+
+function computeFraisLivraisonTotal(row) {
+  const livraisons = toArray(row?.livraisons);
+  return livraisons.reduce((sum, l) => sum + Number(l?.fraisLivraison || l?.frais_livraison || 0), 0);
+}
+
+function computeCommandeBaseTotal(row) {
+  const produits = toArray(row?.produits || row?.produit || row?.products || row?.items);
+  if (produits.length) return computeProduitsTotal(row);
+
+  const stored = Number(row?.montant_total || row?.montantTotal || row?.amount_total || 0);
+  const currentFees = computeFraisLivraisonTotal(row);
+  return Math.max(0, stored - currentFees);
+}
+
+function computeCommandeTotal(row) {
+  return computeCommandeBaseTotal(row) + computeFraisLivraisonTotal(row);
 }
 
 async function updateClientAfterCommandeCompat(apiClient, companyId, clientId, montant) {
@@ -404,7 +458,8 @@ function mapCommandeRow(row, client) {
 
     bande: row.bande_snapshot || row.bande_id || row.band_id || null,
     produits: toArray(row.produits || row.produit || row.products || row.items),
-    montantTotal: Number(row.montant_total || row.montantTotal || row.amount_total || 0),
+    montantTotal: computeCommandeTotal(row),
+    fraisLivraisonTotal: computeFraisLivraisonTotal(row),
     statut: row.statut,
     dateLivraison: row.date_livraison || row.dateLivraison,
     notes: row.notes || row.note || row.commentaire || row.description || '',
@@ -505,7 +560,7 @@ router.post('/', async (req, res) => {
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
     const statutInitial = (req.body.statut || 'en_attente').toString();
-    const auteur = req.body.auteur || req.user.email || 'Utilisateur';
+    const auteur = req.body.auteur || getActorLabel(req);
 
     let clientSnapshot = null;
     if (req.body.clientId) {
@@ -605,13 +660,14 @@ router.put('/:id/statut', async (req, res) => {
     const historique = toArray(current.data.historique_actions);
     historique.push({
       action: 'changement_statut',
-      auteur: req.body.auteur || req.user.email || 'Utilisateur',
+      auteur: req.body.auteur || getActorLabel(req),
       details: `Nouveau statut: ${nouveauStatut}`,
       date: new Date().toISOString(),
     });
 
     let tresoreriePayload = null;
     if (nouveauStatut === 'payee' && current.data.vente_comptabilisee !== true) {
+      const montantGlobalCommande = computeCommandeTotal(current.data);
       const userName = getUserName(req);
       tresoreriePayload = {
         company_id: companyId,
@@ -621,9 +677,9 @@ router.put('/:id/statut', async (req, res) => {
         qui_prenom: userName.quiPrenom,
         categorie: 'vente',
         type: 'Commande client',
-        montant: Number(current.data.montant_total || current.data.montantTotal || 0),
+        montant: Number(montantGlobalCommande || 0),
         date_mouvement: new Date().toISOString(),
-        commentaire: `Commande ${current.data.id} declarée payee`,
+        commentaire: `Commande ${current.data.id} declarée payee (produits + livraison)`,
         reference_type: 'Commande',
         reference_id: current.data.id,
         externe_cle: `commande:${current.data.id}:payee`,
@@ -687,7 +743,7 @@ router.post('/:id/livraisons', async (req, res) => {
       statutLivraison: req.body.statutLivraison || 'planifiee',
       fraisLivraison: Number(req.body.fraisLivraison || 0),
       commentaires: req.body.commentaires || '',
-      utilisateur: req.user?.email || 'Utilisateur',
+      utilisateur: getActorLabel(req),
     };
 
     const livraisons = toArray(current.data.livraisons);
@@ -696,13 +752,16 @@ router.post('/:id/livraisons', async (req, res) => {
     const historique = toArray(current.data.historique_actions);
     historique.push({
       action: 'ajout_livraison',
-      auteur: req.user?.email || 'Utilisateur',
+      auteur: getActorLabel(req),
       details: `Livraison planifiée (${livraison.statutLivraison})`,
       date: new Date().toISOString(),
     });
 
+    const totalCommande = computeCommandeBaseTotal(current.data) + computeFraisLivraisonTotal({ ...current.data, livraisons });
+
     const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
       livraisons,
+      montant_total: totalCommande,
       historique_actions: historique,
       updated_at: new Date().toISOString(),
     });
@@ -742,13 +801,16 @@ router.put('/:id/livraisons/:livraisonId', async (req, res) => {
     const historique = toArray(current.data.historique_actions);
     historique.push({
       action: 'maj_livraison',
-      auteur: req.user?.email || 'Utilisateur',
+      auteur: getActorLabel(req),
       details: `Livraison mise à jour (${l.statutLivraison})`,
       date: new Date().toISOString(),
     });
 
+    const totalCommande = computeCommandeBaseTotal(current.data) + computeFraisLivraisonTotal({ ...current.data, livraisons });
+
     const saved = await updateCommandeCompat(apiClient, companyId, req.params.id, {
       livraisons,
+      montant_total: totalCommande,
       historique_actions: historique,
       updated_at: new Date().toISOString(),
     });
@@ -775,7 +837,7 @@ router.post('/:id/commentaires', async (req, res) => {
 
     const commentaires = toArray(current.data.commentaires);
     commentaires.push({
-      auteur: req.body.auteur || req.user.email || 'Utilisateur',
+      auteur: req.body.auteur || getActorLabel(req),
       message: req.body.message,
       date: new Date().toISOString(),
     });
@@ -783,7 +845,7 @@ router.post('/:id/commentaires', async (req, res) => {
     const historique = toArray(current.data.historique_actions);
     historique.push({
       action: 'commentaire',
-      auteur: req.body.auteur || req.user.email || 'Utilisateur',
+      auteur: req.body.auteur || getActorLabel(req),
       details: 'Commentaire ajouté',
       date: new Date().toISOString(),
     });
