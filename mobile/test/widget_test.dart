@@ -426,6 +426,7 @@ void main() {
 
     expect(find.text('Planning Test UI'), findsWidgets);
     expect(find.textContaining('Macro planning mensuel'), findsOneWidget);
+    expect(find.text('Ajouter'), findsOneWidget);
     expect(find.byTooltip('Modifier tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
     expect(find.byTooltip('Supprimer tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
   });

@@ -146,6 +146,8 @@ enum _RoadmapActionMode { edit, delete }
 
 enum _RoadmapItemKind { task, subtask, milestone, planningDate }
 
+enum _RoadmapCreateKind { task, subtask, milestone, planningDate }
+
 class _MilestoneSelection {
   final RoadmapTask task;
   final RoadmapMilestone milestone;
@@ -429,19 +431,9 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                       label: const Text('Modifier planning'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: () => _showAddTaskDialog(plan, asSubtask: false),
+                      onPressed: () => _showRoadmapCreateMenu(plan),
                       icon: const Icon(Icons.task_alt),
-                      label: const Text('Tâche'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _showAddTaskDialog(plan, asSubtask: true),
-                      icon: const Icon(Icons.account_tree_outlined),
-                      label: const Text('Sous-tâche'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _showHighlightDateDialog(plan),
-                      icon: const Icon(Icons.flag),
-                      label: const Text('Date clé'),
+                      label: const Text('Ajouter'),
                     ),
                   ],
                 ),
@@ -598,12 +590,6 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             ),
             const SizedBox(height: 4),
             Text('${DateFormat('dd/MM/yyyy').format(task.start)} -> ${DateFormat('dd/MM/yyyy').format(task.end)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-            const SizedBox(height: 6),
-            IconButton(
-              tooltip: 'Ajouter jalon',
-              onPressed: () => _showAddMilestoneDialog(plan, task),
-              icon: const Icon(Icons.flag_outlined, size: 18),
-            ),
             if (task.subTasks.isNotEmpty) ...task.subTasks.map((s) => _buildTaskTile(s, plan, indent: indent + 16)),
           ],
         ),
@@ -1266,6 +1252,85 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
     }
   }
 
+  Future<void> _showRoadmapCreateMenu(ProductionPlan plan) async {
+    final kind = await showModalBottomSheet<_RoadmapCreateKind>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.task_alt),
+              title: const Text('Tâche'),
+              onTap: () => Navigator.pop(ctx, _RoadmapCreateKind.task),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: const Text('Sous-tâche'),
+              onTap: () => Navigator.pop(ctx, _RoadmapCreateKind.subtask),
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Jalon'),
+              onTap: () => Navigator.pop(ctx, _RoadmapCreateKind.milestone),
+            ),
+            ListTile(
+              leading: const Icon(Icons.outlined_flag),
+              title: const Text('Date clé du planning'),
+              onTap: () => Navigator.pop(ctx, _RoadmapCreateKind.planningDate),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (kind == null || !mounted) return;
+
+    switch (kind) {
+      case _RoadmapCreateKind.task:
+        await _showAddTaskDialog(plan, asSubtask: false);
+        break;
+      case _RoadmapCreateKind.subtask:
+        await _showAddTaskDialog(plan, asSubtask: true);
+        break;
+      case _RoadmapCreateKind.milestone:
+        await _showMilestoneTaskPicker(plan);
+        break;
+      case _RoadmapCreateKind.planningDate:
+        await _showHighlightDateDialog(plan);
+        break;
+    }
+  }
+
+  Future<void> _showMilestoneTaskPicker(ProductionPlan plan) async {
+    final tasks = _collectAllTasks(plan.tasks);
+    if (tasks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucune tâche disponible pour ajouter un jalon')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: tasks.map((task) {
+            return ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: Text(task.title),
+              subtitle: Text('${DateFormat('dd/MM/yyyy').format(task.start)} -> ${DateFormat('dd/MM/yyyy').format(task.end)}'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showAddMilestoneDialog(plan, task);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showTaskPicker(ProductionPlan plan, _RoadmapActionMode mode, {required bool subtasks}) async {
     final tasks = subtasks ? _collectSubTasks(plan.tasks) : plan.tasks;
     if (tasks.isEmpty) {
@@ -1375,6 +1440,15 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
     for (final task in tasks) {
       out.addAll(task.subTasks);
       out.addAll(_collectSubTasks(task.subTasks));
+    }
+    return out;
+  }
+
+  List<RoadmapTask> _collectAllTasks(List<RoadmapTask> tasks) {
+    final out = <RoadmapTask>[];
+    for (final task in tasks) {
+      out.add(task);
+      out.addAll(_collectAllTasks(task.subTasks));
     }
     return out;
   }
