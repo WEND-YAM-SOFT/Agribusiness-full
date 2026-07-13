@@ -22,6 +22,12 @@ class _CommandesScreenState extends State<CommandesScreen> {
   bool _creatingClient = false;
   bool _showHistoriqueCommandes = false;
 
+  double _parseDecimal(String value) {
+    final normalized = value.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return 0;
+    return double.tryParse(normalized) ?? 0;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -387,7 +393,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
             onPressed: () {
               if (produitNomController.text.isEmpty) return;
               final qte = int.tryParse(produitQteController.text) ?? 0;
-              final prix = double.tryParse(produitPrixController.text) ?? 0;
+              final prix = _parseDecimal(produitPrixController.text);
               Navigator.pop(ctx);
               // Sélectionner un client avant de créer la commande
               _selectClientPourCommande(
@@ -681,7 +687,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
 
                 final nomProduit = nomProduitCtrl.text.trim();
                 final quantite = int.tryParse(quantiteCtrl.text.trim()) ?? 0;
-                final prix = double.tryParse(prixCtrl.text.trim()) ?? 0;
+                final prix = _parseDecimal(prixCtrl.text);
                 if (commande.id == null || commande.id!.isEmpty) {
                   messenger.showSnackBar(const SnackBar(content: Text('Commande invalide')));
                   return;
@@ -804,7 +810,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                   'dateLivraisonPrevue': datePrevue.toIso8601String(),
                   'dateLivraisonReelle': dateReelle?.toIso8601String(),
                   'statutLivraison': statut,
-                  'fraisLivraison': double.tryParse(fraisCtrl.text) ?? 0,
+                  'fraisLivraison': _parseDecimal(fraisCtrl.text),
                   'commentaires': commentairesCtrl.text.trim(),
                 });
               },
