@@ -80,6 +80,7 @@ class Commande {
   final String bandeNom;
   final List<Produit> produits;
   final double montantTotal;
+  final double fraisLivraisonTotal;
   final String statut;
   final DateTime? dateLivraison;
   final String notes;
@@ -94,6 +95,7 @@ class Commande {
     this.bandeNom = '',
     required this.produits,
     required this.montantTotal,
+    this.fraisLivraisonTotal = 0,
     this.statut = 'en_attente',
     this.dateLivraison,
     this.notes = '',
@@ -124,6 +126,14 @@ class Commande {
 
     final List<dynamic> produitsRaw = (json['produits'] as List<dynamic>?) ?? const [];
     final rawMontant = json['montantTotal'] ?? json['montant_total'] ?? 0;
+    final livraisons = (json['livraisons'] as List<dynamic>? ?? const [])
+      .whereType<Map>()
+      .map((l) => LivraisonCommande.fromJson(Map<String, dynamic>.from(l)))
+      .toList();
+    final rawFrais = json['fraisLivraisonTotal'] ?? json['frais_livraison_total'];
+    final fraisLivraisonTotal = rawFrais == null
+      ? livraisons.fold<double>(0, (sum, l) => sum + l.fraisLivraison)
+      : (rawFrais is num ? rawFrais.toDouble() : double.tryParse(rawFrais.toString()) ?? 0);
 
     return Commande(
       id: (json['_id'] ?? json['id'])?.toString(),
@@ -136,6 +146,7 @@ class Commande {
           .map((p) => Produit.fromJson(Map<String, dynamic>.from(p)))
           .toList(),
       montantTotal: rawMontant is num ? rawMontant.toDouble() : double.tryParse(rawMontant.toString()) ?? 0,
+        fraisLivraisonTotal: fraisLivraisonTotal,
       statut: (json['statut'] ?? json['status'] ?? 'en_attente').toString(),
       dateLivraison: json['dateLivraison'] != null
           ? DateTime.tryParse(json['dateLivraison'].toString())
@@ -144,10 +155,7 @@ class Commande {
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
           : (json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null),
-      livraisons: (json['livraisons'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((l) => LivraisonCommande.fromJson(Map<String, dynamic>.from(l)))
-          .toList(),
+      livraisons: livraisons,
     );
   }
 

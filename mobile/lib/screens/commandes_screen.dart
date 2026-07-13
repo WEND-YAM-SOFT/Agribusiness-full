@@ -272,6 +272,11 @@ class _CommandesScreenState extends State<CommandesScreen> {
               'Quantité: ${formatAmount(quantiteTotale)} | Montant: ${formatAmountFcfa(commande.montantTotal)}',
               style: const TextStyle(color: Colors.grey),
             ),
+            if (commande.fraisLivraisonTotal > 0)
+              Text(
+                'Frais livraison: ${formatAmountFcfa(commande.fraisLivraisonTotal)}',
+                style: const TextStyle(color: Colors.grey),
+              ),
             if (commande.livraisons.isNotEmpty)
               Text('Livraisons: ${commande.livraisons.length}', style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 8),

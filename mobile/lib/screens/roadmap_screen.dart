@@ -464,36 +464,36 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             ),
           ),
           Expanded(
-            child: plan.tasks.isEmpty
-                ? const Center(child: Text('Ajoutez des tâches pour construire la roadmap'))
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final timelineWidth = _timelineWidth(plan).clamp(constraints.maxWidth, double.infinity);
-                      return SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: SizedBox(
-                          width: timelineWidth,
-                          height: constraints.maxHeight,
-                          child: Column(
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: _buildMonthHeader(plan),
-                              ),
-                              const Divider(height: 1),
-                              Expanded(
-                                child: ListView(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final timelineWidth = _timelineWidth(plan).clamp(constraints.maxWidth, double.infinity);
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: SizedBox(
+                    width: timelineWidth,
+                    height: constraints.maxHeight,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: _buildMonthHeader(plan),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: plan.tasks.isEmpty
+                              ? const Center(child: Text('Ajoutez des tâches pour construire la roadmap'))
+                              : ListView(
                                   padding: const EdgeInsets.all(12),
                                   children: plan.tasks.map((t) => _buildTaskTile(t, plan)).toList(),
                                 ),
-                              ),
-                            ],
-                          ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
+                );
+              },
+            ),
           ),
         ],
       ),
