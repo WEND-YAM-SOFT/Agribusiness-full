@@ -71,6 +71,30 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       builder: (context, admin, _) {
         if (admin.isLoading) return const Center(child: CircularProgressIndicator());
 
+        if (admin.users.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people_outline, size: 48, color: Colors.grey),
+                  const SizedBox(height: 12),
+                  const Text('Aucun utilisateur affiché'),
+                  if ((admin.lastError ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      admin.lastError!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+
         return ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: admin.users.length,

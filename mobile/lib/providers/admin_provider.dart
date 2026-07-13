@@ -17,16 +17,28 @@ class AdminProvider with ChangeNotifier {
 
   Future<void> loadAll() async {
     _isLoading = true;
+    _lastError = null;
     notifyListeners();
 
     try {
       final usersData = await ApiService.getUtilisateurs();
-      final configData = await ApiService.getConfig();
-      final logsData = await ApiService.getAuditLogs();
-
       _users = usersData.map((e) => Map<String, dynamic>.from(e)).toList();
-      _config = Map<String, dynamic>.from(configData);
-      _auditLogs = logsData.map((e) => Map<String, dynamic>.from(e)).toList();
+
+      try {
+        final configData = await ApiService.getConfig();
+        _config = Map<String, dynamic>.from(configData);
+      } catch (e) {
+        _lastError = e.toString().replaceFirst('Exception: ', '').trim();
+      }
+
+      try {
+        final logsData = await ApiService.getAuditLogs();
+        _auditLogs = logsData.map((e) => Map<String, dynamic>.from(e)).toList();
+      } catch (e) {
+        _lastError ??= e.toString().replaceFirst('Exception: ', '').trim();
+      }
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
     } finally {
       _isLoading = false;
       notifyListeners();
