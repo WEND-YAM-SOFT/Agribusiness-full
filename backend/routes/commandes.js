@@ -681,12 +681,14 @@ router.put('/:id/statut', async (req, res) => {
 
     let tresoreriePayload = null;
     if (nouveauStatut === 'payee' && current.data.vente_comptabilisee !== true) {
-      const montantGlobalCommande = computeCommandeTotal(current.data);
+      const montantCalcule = Number(computeCommandeTotal(current.data) || 0);
+      const montantPersisted = Number(current.data.montant_total || current.data.montantTotal || current.data.amount_total || 0);
+      const montantGlobalCommande = Math.max(montantCalcule, montantPersisted);
       const userName = getUserName(req);
       tresoreriePayload = {
         company_id: companyId,
         nature: 'entree',
-        source: 'vente_commande_payee',
+        source: 'vente',
         qui_nom: userName.quiNom,
         qui_prenom: userName.quiPrenom,
         categorie: 'vente',

@@ -28,6 +28,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     {'value': 'approvisionnement', 'label': 'Approvisionnement'},
     {'value': 'depense', 'label': 'Depense'},
     {'value': 'vente', 'label': 'Vente'},
+    {'value': 'vente_commande_payee', 'label': 'Vente (ancien format)'},
     {'value': 'stock_entree', 'label': 'Achat stock'},
     {'value': 'stock_sortie', 'label': 'Ancienne sortie stock'},
     {'value': 'correction', 'label': 'Correction'},
