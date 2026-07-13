@@ -454,6 +454,7 @@ void main() {
     await tester.tap(find.text('Suivi alimentation'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Alimentation - Cycle test'), findsOneWidget);
     expect(find.text('13/07/2026'), findsOneWidget);
 
     await tester.tap(find.text('Date du suivi'));
@@ -465,7 +466,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('15/07/2026'), findsOneWidget);
-    expect(find.text('Formulaire suivi alimentation'), findsOneWidget);
+    expect(find.text('Enregistrer le suivi alimentation'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

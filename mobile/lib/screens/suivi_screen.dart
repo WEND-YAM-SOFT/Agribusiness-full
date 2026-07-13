@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import '../providers/bandes_provider.dart';
 import '../models/bande.dart';
 import '../services/api_service.dart';
+import 'alimentation_screen.dart';
 import 'poids_screen.dart';
 import 'climat_screen.dart';
+import 'mortalite_screen.dart';
 import '../widgets/iso_calendar_picker.dart';
 
 class SuiviScreen extends StatefulWidget {
@@ -17,15 +19,7 @@ class SuiviScreen extends StatefulWidget {
 }
 
 class _SuiviScreenState extends State<SuiviScreen> {
-  final TextEditingController _alimentationCtrl = TextEditingController();
-  final TextEditingController _mortaliteCtrl = TextEditingController(text: '0');
-  final TextEditingController _mortaliteObsCtrl = TextEditingController();
-  final TextEditingController _eauCtrl = TextEditingController();
-  final TextEditingController _obsCtrl = TextEditingController();
-  DateTime _dateSuivi = DateTime.now();
-  List<Map<String, dynamic>> _stocksAliment = [];
   List<Map<String, dynamic>> _stocksProphylaxie = [];
-  String? _selectedAlimentStockId;
 
   Map<String, dynamic>? _dashboardData;
   bool _loadingForecast = true;
@@ -42,11 +36,6 @@ class _SuiviScreenState extends State<SuiviScreen> {
 
   @override
   void dispose() {
-    _alimentationCtrl.dispose();
-    _mortaliteCtrl.dispose();
-    _mortaliteObsCtrl.dispose();
-    _eauCtrl.dispose();
-    _obsCtrl.dispose();
     super.dispose();
   }
 
@@ -60,22 +49,16 @@ class _SuiviScreenState extends State<SuiviScreen> {
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
 
-      final aliments = normalized.where((s) => (s['categorie'] ?? '').toString() == 'aliment').toList();
       final prophylaxie = normalized
           .where((s) => (s['categorie'] ?? '').toString() != 'aliment' && (s['categorie'] ?? '').toString() != 'materiel')
           .toList();
 
       setState(() {
-        _stocksAliment = aliments;
         _stocksProphylaxie = prophylaxie;
-        if (_selectedAlimentStockId == null && _stocksAliment.isNotEmpty) {
-          _selectedAlimentStockId = _stocksAliment.first['_id']?.toString();
-        }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _stocksAliment = [];
         _stocksProphylaxie = [];
       });
     }
@@ -182,12 +165,20 @@ class _SuiviScreenState extends State<SuiviScreen> {
                   label: const Text('Prise de poids'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _showSuiviJourPopup,
+                  onPressed: () async {
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => AlimentationScreen(bande: bande)));
+                    if (!mounted) return;
+                    await _loadForecast();
+                  },
                   icon: const Icon(Icons.restaurant),
                   label: const Text('Suivi alimentation'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _showMortalitePopup,
+                  onPressed: () async {
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => MortaliteScreen(bande: bande)));
+                    if (!mounted) return;
+                    await _loadForecast();
+                  },
                   icon: const Icon(Icons.health_and_safety),
                   label: const Text('Mortalité'),
                 ),
@@ -249,241 +240,6 @@ class _SuiviScreenState extends State<SuiviScreen> {
         ),
       ),
     );
-  }
-
-  void _showSuiviJourPopup() {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Formulaire suivi alimentation'),
-          content: SingleChildScrollView(
-            child: _buildFormSuiviDuJour(
-              dialogContext: dialogContext,
-              setDialogState: setDialogState,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Fermer'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFormSuiviDuJour({BuildContext? dialogContext, StateSetter? setDialogState}) {
-    final df = DateFormat('dd/MM/yyyy');
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Formulaire "Suivi alimentation"', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Date du suivi'),
-              subtitle: Text(df.format(_dateSuivi)),
-              trailing: const Icon(Icons.calendar_month),
-              onTap: () async {
-                final d = await showIsoDatePicker(
-                  context: dialogContext ?? context,
-                  initialDate: _dateSuivi,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime.now().add(const Duration(days: 30)),
-                );
-                if (d != null) {
-                  setState(() => _dateSuivi = d);
-                  setDialogState?.call(() {});
-                }
-              },
-            ),
-            TextField(
-              controller: _alimentationCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Alimentation (kg) *'),
-            ),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedAlimentStockId,
-              items: _stocksAliment
-                  .map(
-                    (s) => DropdownMenuItem<String>(
-                      value: s['_id']?.toString(),
-                      child: Text('${s['nom']} (${s['quantiteActuelle']} ${s['unite']})'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                setState(() => _selectedAlimentStockId = v);
-                setDialogState?.call(() {});
-              },
-              decoration: const InputDecoration(labelText: 'Type d\'alimentation *'),
-            ),
-            TextField(
-              controller: _obsCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(labelText: 'Observations *'),
-            ),
-            TextField(
-              controller: _eauCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Eau (litres) (optionnel)'),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () => _enregistrerSuivi(dialogContext: dialogContext),
-              icon: const Icon(Icons.save),
-              label: const Text('Enregistrer'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _enregistrerSuivi({BuildContext? dialogContext}) async {
-    final dialogNavigator = dialogContext != null ? Navigator.of(dialogContext) : null;
-    final alimentation = double.tryParse(_alimentationCtrl.text) ?? 0;
-    final observations = _obsCtrl.text.trim();
-    if (alimentation <= 0 || observations.isEmpty || _selectedAlimentStockId == null || _selectedAlimentStockId!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Renseigne les champs obligatoires du suivi alimentation, y compris le type d\'alimentation')),
-      );
-      return;
-    }
-    final alimentationType = _stockNameById(_stocksAliment, _selectedAlimentStockId);
-
-    final ok = await context.read<BandesProvider>().ajouterSuivi(widget.bande.id!, {
-      'date': _dateSuivi.toIso8601String(),
-      'alimentationKg': alimentation,
-      'alimentationStockId': _selectedAlimentStockId,
-      'alimentationType': alimentationType,
-      'mortaliteJour': 0,
-      'eauLitres': double.tryParse(_eauCtrl.text) ?? 0,
-      'observations': observations,
-    });
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? 'Suivi du jour enregistré' : 'Erreur enregistrement suivi')),
-    );
-    if (ok) {
-      _alimentationCtrl.clear();
-      _eauCtrl.clear();
-      _obsCtrl.clear();
-      _loadStocks();
-      _loadForecast();
-      if (dialogNavigator != null) {
-        dialogNavigator.pop();
-      }
-    }
-  }
-
-  void _showMortalitePopup() {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Formulaire mortalité'),
-          content: SingleChildScrollView(
-            child: _buildFormMortalite(
-              dialogContext: dialogContext,
-              setDialogState: setDialogState,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Fermer'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFormMortalite({BuildContext? dialogContext, StateSetter? setDialogState}) {
-    final df = DateFormat('dd/MM/yyyy');
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Formulaire "Mortalité"', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Date de déclaration'),
-              subtitle: Text(df.format(_dateSuivi)),
-              trailing: const Icon(Icons.calendar_month),
-              onTap: () async {
-                final d = await showIsoDatePicker(
-                  context: dialogContext ?? context,
-                  initialDate: _dateSuivi,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime.now().add(const Duration(days: 30)),
-                );
-                if (d != null) {
-                  setState(() => _dateSuivi = d);
-                  setDialogState?.call(() {});
-                }
-              },
-            ),
-            TextField(
-              controller: _mortaliteCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Mortalité du jour *'),
-            ),
-            TextField(
-              controller: _mortaliteObsCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(labelText: 'Observations (optionnel)'),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () => _enregistrerMortalite(dialogContext: dialogContext),
-              icon: const Icon(Icons.save),
-              label: const Text('Enregistrer'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _enregistrerMortalite({BuildContext? dialogContext}) async {
-    final dialogNavigator = dialogContext != null ? Navigator.of(dialogContext) : null;
-    final mortalite = int.tryParse(_mortaliteCtrl.text) ?? -1;
-    if (mortalite <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La mortalité du jour doit être supérieure à 0')),
-      );
-      return;
-    }
-
-    final ok = await context.read<BandesProvider>().ajouterMortalite(widget.bande.id!, {
-      'date': _dateSuivi.toIso8601String(),
-      'mortaliteJour': mortalite,
-      'observations': _mortaliteObsCtrl.text.trim(),
-    });
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? 'Mortalité enregistrée' : 'Erreur enregistrement mortalité')),
-    );
-    if (ok) {
-      _mortaliteCtrl.text = '0';
-      _mortaliteObsCtrl.clear();
-      _loadForecast();
-      if (dialogNavigator != null) {
-        dialogNavigator.pop();
-      }
-    }
   }
 
   Widget _buildEventsPrevisionnels() {
