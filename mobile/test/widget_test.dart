@@ -1,10 +1,12 @@
 import 'package:agribusiness/models/alerte.dart';
+import 'package:agribusiness/models/bande.dart';
 import 'package:agribusiness/models/stock.dart';
 import 'package:agribusiness/providers/alertes_provider.dart';
 import 'package:agribusiness/providers/stocks_provider.dart';
 import 'package:agribusiness/screens/alertes_screen.dart';
 import 'package:agribusiness/screens/roadmap_screen.dart';
 import 'package:agribusiness/screens/stocks_screen.dart';
+import 'package:agribusiness/screens/suivi_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -424,5 +426,42 @@ void main() {
 
     expect(find.text('Planning Test UI'), findsWidgets);
     expect(find.textContaining('Macro planning mensuel'), findsOneWidget);
+  });
+
+  testWidgets('Suivi day form refreshes selected date immediately', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final bande = Bande(
+      id: 'bande-1',
+      nom: 'Cycle test',
+      dateOuverture: DateTime(2026, 7, 1),
+      typeVolaille: 'poulet_chair',
+      race: 'Cobb',
+      nombreInitial: 100,
+      nombreActuel: 100,
+    );
+
+    await tester.pumpWidget(MaterialApp(home: SuiviScreen(bande: bande)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ouvrir formulaire suivi jour'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('13/07/2026'), findsOneWidget);
+
+    await tester.tap(find.text('Date du suivi'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('15').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Valider'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('15/07/2026'), findsOneWidget);
+    expect(find.text('Formulaire suivi du jour'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

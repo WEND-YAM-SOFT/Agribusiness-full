@@ -251,20 +251,27 @@ class _SuiviScreenState extends State<SuiviScreen> {
   void _showSuiviJourPopup() {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Formulaire suivi du jour'),
-        content: SingleChildScrollView(child: _buildFormSuiviDuJour(dialogContext: dialogContext)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Fermer'),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Formulaire suivi du jour'),
+          content: SingleChildScrollView(
+            child: _buildFormSuiviDuJour(
+              dialogContext: dialogContext,
+              setDialogState: setDialogState,
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFormSuiviDuJour({BuildContext? dialogContext}) {
+  Widget _buildFormSuiviDuJour({BuildContext? dialogContext, StateSetter? setDialogState}) {
     final df = DateFormat('dd/MM/yyyy');
     return Card(
       child: Padding(
@@ -281,12 +288,15 @@ class _SuiviScreenState extends State<SuiviScreen> {
               trailing: const Icon(Icons.calendar_month),
               onTap: () async {
                 final d = await showIsoDatePicker(
-                  context: context,
+                  context: dialogContext ?? context,
                   initialDate: _dateSuivi,
                   firstDate: DateTime(2000),
                   lastDate: DateTime.now().add(const Duration(days: 30)),
                 );
-                if (d != null) setState(() => _dateSuivi = d);
+                if (d != null) {
+                  setState(() => _dateSuivi = d);
+                  setDialogState?.call(() {});
+                }
               },
             ),
             TextField(
@@ -304,7 +314,10 @@ class _SuiviScreenState extends State<SuiviScreen> {
                     ),
                   )
                   .toList(),
-              onChanged: (v) => setState(() => _selectedAlimentStockId = v),
+              onChanged: (v) {
+                setState(() => _selectedAlimentStockId = v);
+                setDialogState?.call(() {});
+              },
               decoration: const InputDecoration(labelText: 'Type d\'alimentation *'),
             ),
             TextField(
