@@ -144,13 +144,20 @@ class ProductionPlan {
 
 enum _RoadmapActionMode { edit, delete }
 
-enum _RoadmapItemKind { task, subtask, milestone }
+enum _RoadmapItemKind { task, subtask, milestone, planningDate }
 
 class _MilestoneSelection {
   final RoadmapTask task;
   final RoadmapMilestone milestone;
 
   const _MilestoneSelection({required this.task, required this.milestone});
+}
+
+class _HighlightDateSelection {
+  final int index;
+  final DateTime date;
+
+  const _HighlightDateSelection({required this.index, required this.date});
 }
 
 class _RoadmapGridPainter extends CustomPainter {
@@ -400,12 +407,12 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Modifier tâche, sous-tâche ou jalon',
+                      tooltip: 'Modifier tâche, sous-tâche, jalon ou date clé',
                       onPressed: () => _showRoadmapActionMenu(plan, _RoadmapActionMode.edit),
                       icon: const Icon(Icons.edit_outlined),
                     ),
                     IconButton(
-                      tooltip: 'Supprimer tâche, sous-tâche ou jalon',
+                      tooltip: 'Supprimer tâche, sous-tâche, jalon ou date clé',
                       onPressed: () => _showRoadmapActionMenu(plan, _RoadmapActionMode.delete),
                       icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                     ),
@@ -1232,6 +1239,11 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
               title: const Text('Jalon'),
               onTap: () => Navigator.pop(ctx, _RoadmapItemKind.milestone),
             ),
+            ListTile(
+              leading: const Icon(Icons.outlined_flag),
+              title: const Text('Date clé du planning'),
+              onTap: () => Navigator.pop(ctx, _RoadmapItemKind.planningDate),
+            ),
           ],
         ),
       ),
@@ -1247,6 +1259,9 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
         break;
       case _RoadmapItemKind.milestone:
         await _showMilestonePicker(plan, mode);
+        break;
+      case _RoadmapItemKind.planningDate:
+        await _showHighlightDatePicker(plan, mode);
         break;
     }
   }
@@ -1321,6 +1336,40 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
     );
   }
 
+  Future<void> _showHighlightDatePicker(ProductionPlan plan, _RoadmapActionMode mode) async {
+    final dates = _collectHighlightDates(plan);
+    if (dates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucune date clé disponible')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: dates.map((item) {
+            return ListTile(
+              leading: Icon(mode == _RoadmapActionMode.edit ? Icons.edit : Icons.delete_outline, color: mode == _RoadmapActionMode.delete ? Colors.redAccent : null),
+              title: Text('Date clé ${item.index + 1}'),
+              subtitle: Text(DateFormat('dd/MM/yyyy').format(item.date)),
+              onTap: () {
+                Navigator.pop(ctx);
+                if (mode == _RoadmapActionMode.edit) {
+                  _showEditHighlightDateDialog(plan, item);
+                } else {
+                  _showDeleteHighlightDateDialog(plan, item);
+                }
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   List<RoadmapTask> _collectSubTasks(List<RoadmapTask> tasks) {
     final out = <RoadmapTask>[];
     for (final task in tasks) {
@@ -1339,6 +1388,78 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
       out.addAll(_collectMilestones(task.subTasks));
     }
     return out;
+  }
+
+  List<_HighlightDateSelection> _collectHighlightDates(ProductionPlan plan) {
+    return List<_HighlightDateSelection>.generate(
+      plan.highlightedDates.length,
+      (index) => _HighlightDateSelection(index: index, date: plan.highlightedDates[index]),
+    );
+  }
+
+  Future<void> _showEditHighlightDateDialog(ProductionPlan plan, _HighlightDateSelection selection) async {
+    final picked = await showIsoDatePicker(
+      context: context,
+      initialDate: selection.date,
+      firstDate: plan.start,
+      lastDate: plan.end,
+    );
+    if (picked == null) return;
+
+    setState(() {
+      final idx = _plans.indexWhere((p) => p.id == plan.id);
+      if (idx < 0) return;
+      final current = _plans[idx];
+      final dates = [...current.highlightedDates];
+      if (selection.index < 0 || selection.index >= dates.length) return;
+      dates[selection.index] = picked;
+      _plans[idx] = ProductionPlan(
+        id: current.id,
+        name: current.name,
+        start: current.start,
+        end: current.end,
+        tasks: current.tasks,
+        highlightedDates: dates,
+      );
+    });
+    _savePlans();
+  }
+
+  Future<void> _showDeleteHighlightDateDialog(ProductionPlan plan, _HighlightDateSelection selection) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer date clé'),
+        content: Text('Supprimer la date clé du ${DateFormat('dd/MM/yyyy').format(selection.date)} ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() {
+      final idx = _plans.indexWhere((p) => p.id == plan.id);
+      if (idx < 0) return;
+      final current = _plans[idx];
+      final dates = [...current.highlightedDates];
+      if (selection.index < 0 || selection.index >= dates.length) return;
+      dates.removeAt(selection.index);
+      _plans[idx] = ProductionPlan(
+        id: current.id,
+        name: current.name,
+        start: current.start,
+        end: current.end,
+        tasks: current.tasks,
+        highlightedDates: dates,
+      );
+    });
+    _savePlans();
   }
 
   Future<void> _showDeleteMilestoneDialog(ProductionPlan plan, RoadmapTask task, RoadmapMilestone milestone) async {

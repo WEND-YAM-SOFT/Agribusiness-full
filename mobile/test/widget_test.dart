@@ -426,8 +426,8 @@ void main() {
 
     expect(find.text('Planning Test UI'), findsWidgets);
     expect(find.textContaining('Macro planning mensuel'), findsOneWidget);
-    expect(find.byTooltip('Modifier tâche, sous-tâche ou jalon'), findsOneWidget);
-    expect(find.byTooltip('Supprimer tâche, sous-tâche ou jalon'), findsOneWidget);
+    expect(find.byTooltip('Modifier tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
+    expect(find.byTooltip('Supprimer tâche, sous-tâche, jalon ou date clé'), findsOneWidget);
   });
 
   testWidgets('Suivi day form refreshes selected date immediately', (WidgetTester tester) async {
