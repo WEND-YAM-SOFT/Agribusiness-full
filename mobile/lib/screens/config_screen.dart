@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/admin_provider.dart';
+import '../widgets/international_phone_field.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -545,7 +546,10 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 TextField(controller: nom, decoration: const InputDecoration(labelText: 'Nom')),
                 TextField(controller: prenom, decoration: const InputDecoration(labelText: 'Prénom')),
                 TextField(controller: email, decoration: const InputDecoration(labelText: 'Email')),
-                TextField(controller: phone, decoration: const InputDecoration(labelText: 'Téléphone')),
+                InternationalPhoneField(
+                  controller: phone,
+                  labelText: 'Téléphone',
+                ),
                 TextField(controller: mdp, decoration: const InputDecoration(labelText: 'Mot de passe temporaire')),
                 DropdownButtonFormField<String>(
                   initialValue: role,
@@ -563,20 +567,32 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
             ElevatedButton(
               onPressed: () async {
+                final emailValue = email.text.trim();
+                final formattedPhone = phone.text.trim();
+                if (emailValue.isEmpty || !isValidInternationalPhone(formattedPhone)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Email et téléphone valides requis.'),
+                    ),
+                  );
+                  return;
+                }
+
                 final resp = await context.read<AdminProvider>().createUser({
                   'nom': nom.text.trim(),
                   'prenom': prenom.text.trim(),
-                  'email': email.text.trim(),
-                  'telephone': phone.text.trim(),
+                  'email': emailValue,
+                  'telephone': formattedPhone,
                   'role': role,
                   if (mdp.text.trim().isNotEmpty) 'motDePasseTemporaire': mdp.text.trim(),
                 });
 
                 if (!context.mounted) return;
+                final error = context.read<AdminProvider>().lastError;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(resp == null
-                        ? 'Erreur création'
+                        ? 'Erreur création: ${error ?? 'inconnue'}'
                         : 'Créé. MDP temporaire: ${(resp['motDePasseTemporaire'] ?? '')}'),
                   ),
                 );

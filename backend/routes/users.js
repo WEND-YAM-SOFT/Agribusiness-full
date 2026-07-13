@@ -28,6 +28,21 @@ function toPublic(profile, authUser) {
   }, authUser?.email || '');
 }
 
+function normalizeInternationalPhone(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+
+  const match = input.match(/^\+(\d{1,4})\s*(.*)$/);
+  if (!match) return null;
+
+  const countryCode = `+${match[1]}`;
+  const localDigits = (match[2] || '').replace(/\D/g, '');
+  if (localDigits.length < 6) return null;
+
+  const grouped = localDigits.match(/.{1,2}/g) || [];
+  return `${countryCode} ${grouped.join(' ')}`.trim();
+}
+
 router.get('/', async (req, res) => {
   try {
     const client = getAdminClient();
@@ -64,6 +79,11 @@ router.post('/', async (req, res) => {
     const nom = (req.body.nom || '').trim();
     const prenom = (req.body.prenom || '').trim();
     const role = mapRole(req.body.role);
+    const telephone = normalizeInternationalPhone(req.body.telephone || '');
+
+    if (!telephone) {
+      return res.status(400).json({ message: 'Téléphone invalide. Format attendu: +221 77 12 34 56' });
+    }
 
     const created = await client.auth.admin.createUser({
       email,
@@ -72,7 +92,7 @@ router.post('/', async (req, res) => {
       user_metadata: {
         nom,
         prenom,
-        telephone: (req.body.telephone || '').trim(),
+        telephone,
         permissions: Array.isArray(req.body.permissions) ? req.body.permissions : [],
         actif: true,
         mustChangePassword: true,
@@ -86,7 +106,11 @@ router.post('/', async (req, res) => {
       role,
       full_name: mergeFullName(nom, prenom) || email,
     }).select('*').single();
-    if (profileInsert.error) return res.status(400).json({ message: profileInsert.error.message });
+    if (profileInsert.error) {
+      // Roll back auth user to avoid a stuck "already registered" email without profile row.
+      await client.auth.admin.deleteUser(created.data.user.id);
+      return res.status(400).json({ message: profileInsert.error.message });
+    }
 
     await logAudit(client, {
       userId: req.user.id || req.user._id,
@@ -118,7 +142,12 @@ router.put('/:id', async (req, res) => {
 
     const nom = req.body.nom !== undefined ? String(req.body.nom) : String(metadata.nom || '');
     const prenom = req.body.prenom !== undefined ? String(req.body.prenom) : String(metadata.prenom || '');
-    const telephone = req.body.telephone !== undefined ? String(req.body.telephone) : String(metadata.telephone || '');
+    const telephone = req.body.telephone !== undefined
+      ? normalizeInternationalPhone(String(req.body.telephone))
+      : String(metadata.telephone || '');
+    if (req.body.telephone !== undefined && !telephone) {
+      return res.status(400).json({ message: 'Téléphone invalide. Format attendu: +221 77 12 34 56' });
+    }
     const permissions = Array.isArray(req.body.permissions) ? req.body.permissions : (Array.isArray(metadata.permissions) ? metadata.permissions : []);
     const actif = req.body.actif !== undefined ? Boolean(req.body.actif) : metadata.actif !== false;
     const role = req.body.role !== undefined ? mapRole(req.body.role) : mapRole((await client.from('profiles').select('role').eq('id', req.params.id).single()).data?.role);

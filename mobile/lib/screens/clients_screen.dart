@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/clients_provider.dart';
 import '../models/client.dart';
+import '../widgets/international_phone_field.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({super.key});
@@ -251,7 +252,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
               children: [
                 TextField(controller: prenomController, decoration: const InputDecoration(labelText: 'Prénom *')),
                 TextField(controller: nomController, decoration: const InputDecoration(labelText: 'Nom *')),
-                TextField(controller: telephoneController, decoration: const InputDecoration(labelText: 'Téléphone *'), keyboardType: TextInputType.phone),
+                InternationalPhoneField(controller: telephoneController, labelText: 'Téléphone *'),
                 TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email'), keyboardType: TextInputType.emailAddress),
                 TextField(controller: adresseController, decoration: const InputDecoration(labelText: 'Adresse *')),
                 DropdownButtonFormField<String>(
@@ -280,11 +281,17 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 final messenger = ScaffoldMessenger.of(context);
                 if (nomController.text.trim().isEmpty ||
                     prenomController.text.trim().isEmpty ||
-                    telephoneController.text.trim().isEmpty ||
                     adresseController.text.trim().isEmpty ||
                     activiteController.text.trim().isEmpty) {
                   messenger.showSnackBar(
                     const SnackBar(content: Text('Renseigne tous les champs obligatoires (*)')),
+                  );
+                  return;
+                }
+
+                if (!isValidInternationalPhone(telephoneController.text.trim())) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Téléphone invalide. Exemple: +221 77 12 34 56')),
                   );
                   return;
                 }

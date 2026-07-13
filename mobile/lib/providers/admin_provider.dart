@@ -7,11 +7,13 @@ class AdminProvider with ChangeNotifier {
   List<Map<String, dynamic>> _users = [];
   Map<String, dynamic>? _config;
   List<Map<String, dynamic>> _auditLogs = [];
+  String? _lastError;
 
   bool get isLoading => _isLoading;
   List<Map<String, dynamic>> get users => _users;
   Map<String, dynamic>? get config => _config;
   List<Map<String, dynamic>> get auditLogs => _auditLogs;
+  String? get lastError => _lastError;
 
   Future<void> loadAll() async {
     _isLoading = true;
@@ -33,10 +35,12 @@ class AdminProvider with ChangeNotifier {
 
   Future<Map<String, dynamic>?> createUser(Map<String, dynamic> data) async {
     try {
+      _lastError = null;
       final resp = await ApiService.creerUtilisateur(data);
       await loadAll();
       return resp;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return null;
     }
   }

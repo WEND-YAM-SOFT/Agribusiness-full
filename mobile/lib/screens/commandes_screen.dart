@@ -6,6 +6,7 @@ import '../providers/clients_provider.dart';
 import '../models/commande.dart';
 import '../utils/money_format.dart';
 import '../widgets/iso_calendar_picker.dart';
+import '../widgets/international_phone_field.dart';
 
 class CommandesScreen extends StatefulWidget {
   final bool embedded;
@@ -443,7 +444,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
               children: [
                 TextField(controller: prenom, decoration: const InputDecoration(labelText: 'Prénom *')),
                 TextField(controller: nom, decoration: const InputDecoration(labelText: 'Nom *')),
-                TextField(controller: telephone, decoration: const InputDecoration(labelText: 'Téléphone *')),
+                InternationalPhoneField(controller: telephone, labelText: 'Téléphone *'),
                 TextField(controller: email, decoration: const InputDecoration(labelText: 'Email')),
                 TextField(controller: adresse, decoration: const InputDecoration(labelText: 'Adresse *')),
                 DropdownButtonFormField<String>(
@@ -470,9 +471,14 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 if (_creatingClient) return;
                 if (prenom.text.trim().isEmpty ||
                     nom.text.trim().isEmpty ||
-                    telephone.text.trim().isEmpty ||
                     adresse.text.trim().isEmpty ||
                     activite.text.trim().isEmpty) {
+                  return;
+                }
+                if (!isValidInternationalPhone(telephone.text.trim())) {
+                  ScaffoldMessenger.of(rootContext).showSnackBar(
+                    const SnackBar(content: Text('Téléphone invalide. Exemple: +221 77 12 34 56')),
+                  );
                   return;
                 }
                 setState(() => _creatingClient = true);

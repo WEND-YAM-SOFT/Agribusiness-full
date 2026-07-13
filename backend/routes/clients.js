@@ -4,6 +4,21 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 
+function normalizeInternationalPhone(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+
+  const match = input.match(/^\+(\d{1,4})\s*(.*)$/);
+  if (!match) return null;
+
+  const countryCode = `+${match[1]}`;
+  const localDigits = (match[2] || '').replace(/\D/g, '');
+  if (localDigits.length < 6) return null;
+
+  const grouped = localDigits.match(/.{1,2}/g) || [];
+  return `${countryCode} ${grouped.join(' ')}`.trim();
+}
+
 function extractMissingColumn(error) {
   const message = (error?.message || '').toString();
   const match = message.match(/Could not find the '([^']+)' column/i);
@@ -149,7 +164,7 @@ router.post('/', async (req, res) => {
   try {
     const nom = (req.body.nom || '').toString().trim();
     const prenom = (req.body.prenom || '').toString().trim();
-    const telephone = (req.body.telephone || '').toString().trim();
+    const telephone = normalizeInternationalPhone(req.body.telephone || '');
     if (!nom || !prenom || !telephone) {
       return res.status(400).json({ message: 'Les champs obligatoires client sont: nom, prenom, telephone' });
     }
@@ -216,7 +231,11 @@ router.put('/:id', async (req, res) => {
 
     if (req.body.nom !== undefined) updates.nom = req.body.nom;
     if (req.body.prenom !== undefined) updates.prenom = req.body.prenom;
-    if (req.body.telephone !== undefined) updates.telephone = req.body.telephone;
+    if (req.body.telephone !== undefined) {
+      const telephone = normalizeInternationalPhone(req.body.telephone);
+      if (!telephone) return res.status(400).json({ message: 'Téléphone invalide. Format attendu: +221 77 12 34 56' });
+      updates.telephone = telephone;
+    }
     if (req.body.email !== undefined) updates.email = req.body.email;
     if (req.body.entreprise !== undefined) updates.entreprise = req.body.entreprise;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;

@@ -7,6 +7,21 @@ const { getAdminClient, mapRole, mergeFullName, toPublicUser, logAudit } = requi
 
 const router = express.Router();
 
+function normalizeInternationalPhone(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+
+  const match = input.match(/^\+(\d{1,4})\s*(.*)$/);
+  if (!match) return null;
+
+  const countryCode = `+${match[1]}`;
+  const localDigits = (match[2] || '').replace(/\D/g, '');
+  if (localDigits.length < 6) return null;
+
+  const grouped = localDigits.match(/.{1,2}/g) || [];
+  return `${countryCode} ${grouped.join(' ')}`.trim();
+}
+
 function signToken(user) {
   return jwt.sign(
     { id: user.id, role: user.role },
@@ -116,8 +131,12 @@ router.post('/inscription', async (req, res) => {
 
     const email = (req.body.email || '').trim().toLowerCase();
     const password = req.body.motDePasse || '';
+    const telephone = normalizeInternationalPhone(req.body.telephone || '');
     if (!email || !password) {
       return res.status(400).json({ message: 'Email et mot de passe requis' });
+    }
+    if (req.body.telephone !== undefined && req.body.telephone !== '' && !telephone) {
+      return res.status(400).json({ message: 'Téléphone invalide. Format attendu: +221 77 12 34 56' });
     }
 
     const companyId = req.body.company_id || (await getOrCreateDefaultCompanyId(client));
@@ -129,7 +148,7 @@ router.post('/inscription', async (req, res) => {
       user_metadata: {
         nom: req.body.nom || '',
         prenom: req.body.prenom || '',
-        telephone: req.body.telephone || '',
+        telephone,
         permissions: Array.isArray(req.body.permissions) ? req.body.permissions : [],
         actif: true,
         mustChangePassword: false,
@@ -297,7 +316,12 @@ router.put('/profil', authenticate, async (req, res) => {
     const email = (req.body.email || authUser.email || '').trim().toLowerCase();
     const nom = (req.body.nom || authUser.user_metadata?.nom || '').trim();
     const prenom = (req.body.prenom || authUser.user_metadata?.prenom || '').trim();
-    const telephone = (req.body.telephone || authUser.user_metadata?.telephone || '').trim();
+    const telephone = req.body.telephone !== undefined
+      ? normalizeInternationalPhone(req.body.telephone)
+      : (authUser.user_metadata?.telephone || '').trim();
+    if (req.body.telephone !== undefined && !telephone) {
+      return res.status(400).json({ message: 'Téléphone invalide. Format attendu: +221 77 12 34 56' });
+    }
 
     const updatedAuth = await client.auth.admin.updateUserById(userId, {
       email,

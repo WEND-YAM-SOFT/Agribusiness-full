@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../widgets/international_phone_field.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -50,13 +51,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   TextField(controller: _nomCtrl, decoration: const InputDecoration(labelText: 'Nom')),
                   TextField(controller: _prenomCtrl, decoration: const InputDecoration(labelText: 'Prénom')),
                   TextField(controller: _emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
-                  TextField(controller: _telCtrl, decoration: const InputDecoration(labelText: 'Téléphone')),
+                  InternationalPhoneField(controller: _telCtrl, labelText: 'Téléphone'),
                   const SizedBox(height: 8),
                   Text('Rôle: ${(user['role'] ?? '').toString()}'),
                   Text('Permissions: ${((user['permissions'] as List?) ?? []).join(', ')}'),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     onPressed: () async {
+                      if (!isValidInternationalPhone(_telCtrl.text.trim())) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Téléphone invalide. Exemple: +221 77 12 34 56')),
+                        );
+                        return;
+                      }
+
                       final ok = await context.read<AuthProvider>().updateProfile({
                         'nom': _nomCtrl.text.trim(),
                         'prenom': _prenomCtrl.text.trim(),
