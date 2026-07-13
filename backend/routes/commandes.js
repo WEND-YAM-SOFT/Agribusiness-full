@@ -5,6 +5,11 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 
 const router = express.Router();
 const COMMANDES_COMPANY_COLUMNS = ['company_id', 'companyId'];
+const ALLOWED_COMMANDE_STATUTS = new Set(['en_attente', 'confirmee', 'en_preparation', 'payee', 'annulee']);
+
+function isCommandeHistorique(row) {
+  return ((row?.statut || row?.status || '').toString()) === 'payee';
+}
 
 function extractMissingColumn(error) {
   const message = (error?.message || '').toString();
@@ -590,6 +595,12 @@ router.put('/:id/statut', async (req, res) => {
 
     const nouveauStatut = (req.body.statut || '').toString();
     if (!nouveauStatut) return res.status(400).json({ message: 'Statut obligatoire' });
+    if (!ALLOWED_COMMANDE_STATUTS.has(nouveauStatut)) {
+      return res.status(400).json({ message: 'Statut commande invalide' });
+    }
+    if (isCommandeHistorique(current.data)) {
+      return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
+    }
 
     const historique = toArray(current.data.historique_actions);
     historique.push({
@@ -665,6 +676,9 @@ router.post('/:id/livraisons', async (req, res) => {
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
+    if (isCommandeHistorique(current.data)) {
+      return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
+    }
 
     const livraison = {
       _id: crypto.randomUUID(),
@@ -709,6 +723,9 @@ router.put('/:id/livraisons/:livraisonId', async (req, res) => {
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
+    if (isCommandeHistorique(current.data)) {
+      return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
+    }
 
     const livraisons = toArray(current.data.livraisons);
     const index = livraisons.findIndex((l) => String(l._id) === String(req.params.livraisonId));
@@ -752,6 +769,9 @@ router.post('/:id/commentaires', async (req, res) => {
 
     if (current.error) return res.status(400).json({ message: current.error.message });
     if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
+    if (isCommandeHistorique(current.data)) {
+      return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
+    }
 
     const commentaires = toArray(current.data.commentaires);
     commentaires.push({
@@ -826,12 +846,24 @@ router.put('/:id', async (req, res) => {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
 
+    const current = await getCommandeCompat(apiClient, companyId, req.params.id);
+    if (current.error) return res.status(400).json({ message: current.error.message });
+    if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
+    if (isCommandeHistorique(current.data)) {
+      return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
+    }
+
     const updates = { updated_at: new Date().toISOString() };
     if (req.body.clientId !== undefined) updates.client_id = req.body.clientId;
     if (req.body.bandeId !== undefined) updates.bande_id = req.body.bandeId;
     if (req.body.produits !== undefined) updates.produits = toArray(req.body.produits);
     if (req.body.montantTotal !== undefined) updates.montant_total = Number(req.body.montantTotal || 0);
-    if (req.body.statut !== undefined) updates.statut = req.body.statut;
+    if (req.body.statut !== undefined) {
+      if (!ALLOWED_COMMANDE_STATUTS.has(req.body.statut)) {
+        return res.status(400).json({ message: 'Statut commande invalide' });
+      }
+      updates.statut = req.body.statut;
+    }
     if (req.body.dateLivraison !== undefined) updates.date_livraison = req.body.dateLivraison;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
@@ -850,6 +882,13 @@ router.delete('/:id', async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
+
+    const current = await getCommandeCompat(apiClient, companyId, req.params.id);
+    if (current.error) return res.status(400).json({ message: current.error.message });
+    if (!current.data) return res.status(404).json({ message: 'Commande non trouvée' });
+    if (isCommandeHistorique(current.data)) {
+      return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
+    }
 
     let removed = null;
     for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {

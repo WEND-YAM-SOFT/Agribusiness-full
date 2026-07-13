@@ -20,6 +20,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
   late final TextEditingController _searchController;
   bool _creatingOrder = false;
   bool _creatingClient = false;
+  bool _showHistoriqueCommandes = false;
 
   @override
   void initState() {
@@ -60,7 +61,8 @@ class _CommandesScreenState extends State<CommandesScreen> {
   Widget _buildContent() {
     return Consumer<CommandesProvider>(
       builder: (context, provider, child) {
-        final commandes = provider.commandesFiltrees;
+        final commandesActives = provider.commandesActivesFiltrees;
+        final commandesHistorique = provider.commandesHistoriqueFiltrees;
         if (provider.isLoading) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -99,7 +101,6 @@ class _CommandesScreenState extends State<CommandesScreen> {
                   _statusChip(provider, 'en_attente', 'En attente'),
                   _statusChip(provider, 'confirmee', 'Confirmées'),
                   _statusChip(provider, 'en_preparation', 'En préparation'),
-                  _statusChip(provider, 'livree', 'Livrées'),
                   _statusChip(provider, 'payee', 'Payées'),
                   _statusChip(provider, 'annulee', 'Annulées'),
                 ],
@@ -130,7 +131,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 ),
               ),
             Expanded(
-              child: commandes.isEmpty
+              child: commandesActives.isEmpty && commandesHistorique.isEmpty
                   ? const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -141,12 +142,43 @@ class _CommandesScreenState extends State<CommandesScreen> {
                         ],
                       ),
                     )
-                  : ListView.builder(
+                  : ListView(
                       padding: const EdgeInsets.all(16),
-                      itemCount: commandes.length,
-                      itemBuilder: (context, index) {
-                        return _buildCommandeCard(commandes[index]);
-                      },
+                      children: [
+                        if (commandesActives.isNotEmpty) ...[
+                          const Text(
+                            'Commandes actives',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          ...commandesActives.map(_buildCommandeCard),
+                        ],
+                        if (commandesHistorique.isNotEmpty) ...[
+                          if (commandesActives.isNotEmpty) const SizedBox(height: 16),
+                          Card(
+                            child: ExpansionTile(
+                              key: const ValueKey('commandes-historique-tile'),
+                              initiallyExpanded: _showHistoriqueCommandes,
+                              onExpansionChanged: (expanded) {
+                                setState(() => _showHistoriqueCommandes = expanded);
+                              },
+                              title: Text(
+                                'Historique des commandes payées (${commandesHistorique.length})',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: const Text('Cliquer pour afficher ou masquer l\'historique'),
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                  child: Column(
+                                    children: commandesHistorique.map(_buildCommandeCard).toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
             ),
           ],
@@ -164,6 +196,8 @@ class _CommandesScreenState extends State<CommandesScreen> {
   }
 
   Widget _buildCommandeCard(Commande commande) {
+    final provider = context.read<CommandesProvider>();
+    final isHistorique = provider.isCommandeHistorique(commande);
     Color statutColor;
     String statutLabel;
 
@@ -246,54 +280,56 @@ class _CommandesScreenState extends State<CommandesScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                PopupMenuButton<String>(
-                  onSelected: (statut) async {
-                    final provider = context.read<CommandesProvider>();
-                    final ok = await provider.mettreAJourStatut(commande.id!, statut);
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(ok ? 'Statut mis à jour' : 'Erreur statut commande: ${provider.lastError ?? 'cause inconnue'}')),
-                    );
-                  },
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(value: 'confirmee', child: Text('Confirmer')),
-                    const PopupMenuItem(value: 'en_preparation', child: Text('En préparation')),
-                    const PopupMenuItem(value: 'livree', child: Text('Livrée')),
-                    const PopupMenuItem(value: 'payee', child: Text('Payée')),
-                    const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
-                  ],
-                  child: const Chip(label: Text('Changer statut')),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _showAjouterLivraisonDialog(commande),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                if (isHistorique)
+                  const Chip(label: Text('Historique'))
+                else ...[
+                  PopupMenuButton<String>(
+                    onSelected: (statut) async {
+                      final ok = await provider.mettreAJourStatut(commande.id!, statut);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(ok ? 'Statut mis à jour' : 'Erreur statut commande: ${provider.lastError ?? 'cause inconnue'}')),
+                      );
+                    },
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(value: 'confirmee', child: Text('Confirmer')),
+                      const PopupMenuItem(value: 'en_preparation', child: Text('En préparation')),
+                      const PopupMenuItem(value: 'payee', child: Text('Déclarer / Payée')),
+                      const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
+                    ],
+                    child: const Chip(label: Text('Changer statut')),
                   ),
-                  icon: const Icon(Icons.local_shipping, size: 16),
-                  label: const Text('Livraisons'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _showAjouterCommentaireCommandeDialog(commande.id!),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showAjouterLivraisonDialog(commande),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    icon: const Icon(Icons.local_shipping, size: 16),
+                    label: const Text('Livraisons'),
                   ),
-                  icon: const Icon(Icons.comment, size: 16),
-                  label: const Text('Commenter'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _showModifierCommandeDialog(commande),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showAjouterCommentaireCommandeDialog(commande.id!),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    icon: const Icon(Icons.comment, size: 16),
+                    label: const Text('Commenter'),
                   ),
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Modifier'),
-                ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showModifierCommandeDialog(commande),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Modifier'),
+                  ),
+                ],
               ],
             ),
           ],

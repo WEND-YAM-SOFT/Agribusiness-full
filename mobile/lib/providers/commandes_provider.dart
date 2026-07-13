@@ -19,7 +19,6 @@ class CommandesProvider with ChangeNotifier {
     'en_attente',
     'confirmee',
     'en_preparation',
-    'livree',
     'payee',
     'annulee',
   };
@@ -50,6 +49,14 @@ class CommandesProvider with ChangeNotifier {
       return haystack.contains(query);
     }).toList();
   }
+
+  List<Commande> get commandesActivesFiltrees =>
+      commandesFiltrees.where((commande) => !_isHistorique(commande)).toList();
+
+  List<Commande> get commandesHistoriqueFiltrees =>
+      commandesFiltrees.where(_isHistorique).toList();
+
+  bool isCommandeHistorique(Commande commande) => _isHistorique(commande);
 
   void toggleStatut(String statut) {
     if (!_allowedStatuts.contains(statut)) return;
@@ -211,4 +218,6 @@ class CommandesProvider with ChangeNotifier {
     await prefs.setStringList('commandes.selectedStatuts', _selectedStatuts.toList());
     await prefs.setString('commandes.searchQuery', _searchQuery);
   }
+
+  bool _isHistorique(Commande commande) => commande.statut == 'payee';
 }
