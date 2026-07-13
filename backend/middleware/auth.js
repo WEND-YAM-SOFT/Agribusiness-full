@@ -28,6 +28,20 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ message: 'Session invalide' });
     }
 
+    const fullName = (profile.full_name || profile.fullName || '').toString().trim();
+    let prenom = (profile.prenom || '').toString().trim();
+    let nom = (profile.nom || '').toString().trim();
+    if ((!prenom || !nom) && fullName) {
+      const parts = fullName.split(/\s+/).filter(Boolean);
+      if (parts.length === 1) {
+        prenom = prenom || parts[0];
+        nom = nom || parts[0];
+      } else if (parts.length > 1) {
+        prenom = prenom || parts[0];
+        nom = nom || parts.slice(1).join(' ');
+      }
+    }
+
     req.user = {
       _id: profile.id,
       id: profile.id,
@@ -35,8 +49,10 @@ async function authenticate(req, res, next) {
       role: toAppRole(profile.role),
       permissions: Array.isArray(profile.permissions) ? profile.permissions : [],
       actif: profile.actif !== false,
-      nom: profile.nom || '',
-      prenom: profile.prenom || '',
+      nom,
+      prenom,
+      nomComplet: fullName,
+      fullName,
       telephone: profile.telephone || '',
     };
     next();

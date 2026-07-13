@@ -142,8 +142,12 @@ function computeProduitsTotal(row) {
 }
 
 function computeFraisLivraisonTotal(row) {
-  const livraisons = toArray(row?.livraisons);
+  const livraisons = readLivraisons(row);
   return livraisons.reduce((sum, l) => sum + Number(l?.fraisLivraison || l?.frais_livraison || 0), 0);
+}
+
+function readLivraisons(row) {
+  return toArray(row?.livraisons || row?.deliveries || row?.delivery || row?.livraison);
 }
 
 function computeCommandeBaseTotal(row) {
@@ -273,6 +277,8 @@ async function insertCommandeCompat(apiClient, payload) {
       candidate.bandeId = candidate.bande_id;
     }
 
+    applyCommandeColumnAliases(candidate, missingColumn);
+
     if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
       return result;
     }
@@ -335,6 +341,8 @@ async function updateCommandeCompat(apiClient, companyId, commandeId, updateObj,
     ) {
       candidate.dateLivraison = candidate.date_livraison;
     }
+
+    applyCommandeColumnAliases(candidate, missingColumn);
 
     if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
       return result;
@@ -433,6 +441,12 @@ function applyCommandeColumnAliases(candidate, missingColumn) {
     if (!Object.prototype.hasOwnProperty.call(candidate, 'montantTotal')) candidate.montantTotal = candidate.montant_total;
     if (!Object.prototype.hasOwnProperty.call(candidate, 'amount_total')) candidate.amount_total = candidate.montant_total;
   }
+
+  if (missingColumn === 'livraisons' && Object.prototype.hasOwnProperty.call(candidate, 'livraisons')) {
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'deliveries')) candidate.deliveries = candidate.livraisons;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'delivery')) candidate.delivery = candidate.livraisons;
+    if (!Object.prototype.hasOwnProperty.call(candidate, 'livraison')) candidate.livraison = candidate.livraisons;
+  }
 }
 
 function mapCommandeRow(row, client) {
@@ -465,7 +479,7 @@ function mapCommandeRow(row, client) {
     notes: row.notes || row.note || row.commentaire || row.description || '',
     commentaires: toArray(row.commentaires || row.comments),
     historiqueActions: toArray(row.historique_actions || row.historiqueActions),
-    livraisons: toArray(row.livraisons),
+    livraisons: readLivraisons(row),
     venteComptabilisee: row.vente_comptabilisee === true,
     dernierMouvementTresorerieId: row.dernier_mouvement_tresorerie_id || null,
     createdAt: row.created_at || row.createdAt,
@@ -746,7 +760,7 @@ router.post('/:id/livraisons', async (req, res) => {
       utilisateur: getActorLabel(req),
     };
 
-    const livraisons = toArray(current.data.livraisons);
+    const livraisons = readLivraisons(current.data);
     livraisons.push(livraison);
 
     const historique = toArray(current.data.historique_actions);
@@ -786,7 +800,7 @@ router.put('/:id/livraisons/:livraisonId', async (req, res) => {
       return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
     }
 
-    const livraisons = toArray(current.data.livraisons);
+    const livraisons = readLivraisons(current.data);
     const index = livraisons.findIndex((l) => String(l._id) === String(req.params.livraisonId));
     if (index === -1) return res.status(404).json({ message: 'Livraison non trouvée' });
 
