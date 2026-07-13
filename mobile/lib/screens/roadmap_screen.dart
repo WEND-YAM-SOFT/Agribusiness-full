@@ -142,6 +142,17 @@ class ProductionPlan {
   }
 }
 
+enum _RoadmapActionMode { edit, delete }
+
+enum _RoadmapItemKind { task, subtask, milestone }
+
+class _MilestoneSelection {
+  final RoadmapTask task;
+  final RoadmapMilestone milestone;
+
+  const _MilestoneSelection({required this.task, required this.milestone});
+}
+
 class _RoadmapGridPainter extends CustomPainter {
   _RoadmapGridPainter({required this.monthsTotal, required this.monthWidth});
 
@@ -377,8 +388,29 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(plan.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('Macro planning mensuel - ${DateFormat('yyyy').format(plan.start)} à ${DateFormat('yyyy').format(plan.end)}'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(plan.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text('Macro planning mensuel - ${DateFormat('yyyy').format(plan.start)} à ${DateFormat('yyyy').format(plan.end)}'),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Modifier tâche, sous-tâche ou jalon',
+                      onPressed: () => _showRoadmapActionMenu(plan, _RoadmapActionMode.edit),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Supprimer tâche, sous-tâche ou jalon',
+                      onPressed: () => _showRoadmapActionMenu(plan, _RoadmapActionMode.delete),
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -522,7 +554,6 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             GestureDetector(
-              onLongPress: () => _showTaskActionsSheet(plan, task),
               child: Text(task.title, style: TextStyle(fontWeight: task.group ? FontWeight.w700 : FontWeight.w500)),
             ),
             const SizedBox(height: 6),
@@ -550,8 +581,6 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
                         left: (_monthWidth() * unit) - 7,
                         top: 1,
                         child: GestureDetector(
-                          onTap: () => _showEditMilestoneDialog(plan, task, m),
-                          onLongPress: () => _showDeleteMilestoneDialog(plan, task, m),
                           child: Icon(Icons.flag, size: 14, color: m.color),
                         ),
                       );
@@ -1181,33 +1210,135 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
     _savePlans();
   }
 
-  Future<void> _showTaskActionsSheet(ProductionPlan plan, RoadmapTask task) async {
-    await showModalBottomSheet<void>(
+  Future<void> _showRoadmapActionMenu(ProductionPlan plan, _RoadmapActionMode mode) async {
+    final kind = await showModalBottomSheet<_RoadmapItemKind>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('Modifier tâche'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showEditTaskDialog(plan, task);
-              },
+              leading: const Icon(Icons.task_alt),
+              title: const Text('Tâche'),
+              onTap: () => Navigator.pop(ctx, _RoadmapItemKind.task),
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Supprimer tâche'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showDeleteTaskDialog(plan, task);
-              },
+              leading: const Icon(Icons.account_tree_outlined),
+              title: const Text('Sous-tâche'),
+              onTap: () => Navigator.pop(ctx, _RoadmapItemKind.subtask),
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Jalon'),
+              onTap: () => Navigator.pop(ctx, _RoadmapItemKind.milestone),
             ),
           ],
         ),
       ),
     );
+    if (kind == null || !mounted) return;
+
+    switch (kind) {
+      case _RoadmapItemKind.task:
+        await _showTaskPicker(plan, mode, subtasks: false);
+        break;
+      case _RoadmapItemKind.subtask:
+        await _showTaskPicker(plan, mode, subtasks: true);
+        break;
+      case _RoadmapItemKind.milestone:
+        await _showMilestonePicker(plan, mode);
+        break;
+    }
+  }
+
+  Future<void> _showTaskPicker(ProductionPlan plan, _RoadmapActionMode mode, {required bool subtasks}) async {
+    final tasks = subtasks ? _collectSubTasks(plan.tasks) : plan.tasks;
+    if (tasks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(subtasks ? 'Aucune sous-tâche disponible' : 'Aucune tâche disponible')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: tasks.map((task) {
+            final subtitle = '${DateFormat('dd/MM/yyyy').format(task.start)} -> ${DateFormat('dd/MM/yyyy').format(task.end)}';
+            return ListTile(
+              leading: Icon(mode == _RoadmapActionMode.edit ? Icons.edit : Icons.delete_outline, color: mode == _RoadmapActionMode.delete ? Colors.redAccent : null),
+              title: Text(task.title),
+              subtitle: Text(subtitle),
+              onTap: () {
+                Navigator.pop(ctx);
+                if (mode == _RoadmapActionMode.edit) {
+                  _showEditTaskDialog(plan, task);
+                } else {
+                  _showDeleteTaskDialog(plan, task);
+                }
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMilestonePicker(ProductionPlan plan, _RoadmapActionMode mode) async {
+    final milestones = _collectMilestones(plan.tasks);
+    if (milestones.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun jalon disponible')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: milestones.map((item) {
+            final subtitle = '${item.task.title} • ${DateFormat('dd/MM/yyyy').format(item.milestone.date)}';
+            return ListTile(
+              leading: Icon(mode == _RoadmapActionMode.edit ? Icons.edit : Icons.delete_outline, color: mode == _RoadmapActionMode.delete ? Colors.redAccent : null),
+              title: Text(item.milestone.title),
+              subtitle: Text(subtitle),
+              onTap: () {
+                Navigator.pop(ctx);
+                if (mode == _RoadmapActionMode.edit) {
+                  _showEditMilestoneDialog(plan, item.task, item.milestone);
+                } else {
+                  _showDeleteMilestoneDialog(plan, item.task, item.milestone);
+                }
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  List<RoadmapTask> _collectSubTasks(List<RoadmapTask> tasks) {
+    final out = <RoadmapTask>[];
+    for (final task in tasks) {
+      out.addAll(task.subTasks);
+      out.addAll(_collectSubTasks(task.subTasks));
+    }
+    return out;
+  }
+
+  List<_MilestoneSelection> _collectMilestones(List<RoadmapTask> tasks) {
+    final out = <_MilestoneSelection>[];
+    for (final task in tasks) {
+      for (final milestone in task.milestones) {
+        out.add(_MilestoneSelection(task: task, milestone: milestone));
+      }
+      out.addAll(_collectMilestones(task.subTasks));
+    }
+    return out;
   }
 
   Future<void> _showDeleteMilestoneDialog(ProductionPlan plan, RoadmapTask task, RoadmapMilestone milestone) async {

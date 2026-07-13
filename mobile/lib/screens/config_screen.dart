@@ -94,6 +94,11 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                       },
                       icon: const Icon(Icons.lock_reset),
                     ),
+                    IconButton(
+                      tooltip: 'Supprimer utilisateur',
+                      onPressed: () => _confirmDeleteUser((u['id'] ?? u['_id']).toString(), '${u['nom'] ?? ''} ${u['prenom'] ?? ''}'.trim(), (u['email'] ?? '').toString()),
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    ),
                     Switch(
                       value: (u['actif'] ?? false) == true,
                       onChanged: (v) => context.read<AdminProvider>().toggleUserActive((u['id'] ?? u['_id']).toString(), v),
@@ -603,6 +608,32 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _confirmDeleteUser(String id, String fullName, String email) async {
+    final label = fullName.trim().isEmpty ? email : fullName;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer utilisateur'),
+        content: Text('Supprimer "$label" ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    final deleted = await context.read<AdminProvider>().deleteUser(id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(deleted ? 'Utilisateur supprimé' : 'Erreur suppression utilisateur')),
     );
   }
 }
