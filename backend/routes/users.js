@@ -300,8 +300,19 @@ router.delete('/:id', async (req, res) => {
     const userData = await client.auth.admin.getUserById(req.params.id);
     if (userData.error || !userData.data?.user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
+    const profile = await client.from('profiles').select('*').eq('id', req.params.id).maybeSingle();
+    if (profile.error) return res.status(400).json({ message: profile.error.message });
+
+    const deletedProfile = await client.from('profiles').delete().eq('id', req.params.id);
+    if (deletedProfile.error) return res.status(400).json({ message: deletedProfile.error.message });
+
     const deleted = await client.auth.admin.deleteUser(req.params.id);
-    if (deleted.error) return res.status(400).json({ message: deleted.error.message });
+    if (deleted.error) {
+      if (profile.data) {
+        await client.from('profiles').upsert(profile.data);
+      }
+      return res.status(400).json({ message: deleted.error.message });
+    }
 
     await logAudit(client, {
       userId: req.user.id || req.user._id,
