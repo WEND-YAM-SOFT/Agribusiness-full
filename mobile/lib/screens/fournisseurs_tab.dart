@@ -37,8 +37,8 @@ class _FournisseursTabState extends State<FournisseursTab> {
         if (provider.isLoading) return const Center(child: CircularProgressIndicator());
 
         final auth = context.watch<AuthProvider>();
-        final role = (auth.user?['role'] ?? '').toString();
-        final canDelete = auth.hasPermission('clients.delete') || role == 'gestionnaire_ferme';
+        final canUpdate = auth.hasPermission('clients.update');
+        final canDelete = auth.hasPermission('clients.delete') || canUpdate;
 
         return Column(
           children: [
@@ -100,11 +100,12 @@ class _FournisseursTabState extends State<FournisseursTab> {
                                     icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                                     onPressed: () => _confirmDeleteFournisseur(f),
                                   ),
-                                IconButton(
-                                  tooltip: 'Modifier fournisseur',
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () => _showModifierFournisseur(f),
-                                ),
+                                if (canUpdate)
+                                  IconButton(
+                                    tooltip: 'Modifier fournisseur',
+                                    icon: const Icon(Icons.edit),
+                                    onPressed: () => _showModifierFournisseur(f),
+                                  ),
                               ],
                             ),
                           ),

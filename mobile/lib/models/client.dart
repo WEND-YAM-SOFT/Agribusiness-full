@@ -32,20 +32,50 @@ class Client {
   });
 
   factory Client.fromJson(Map<String, dynamic> json) {
+    String pick(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value != null && value.toString().trim().isNotEmpty) {
+          return value.toString();
+        }
+      }
+      return '';
+    }
+
     return Client(
-      id: json['_id'],
-      nom: json['nom'],
-      prenom: json['prenom'],
-      telephone: json['telephone'],
-      email: json['email'] ?? '',
-      adresse: json['adresse'] ?? '',
-      typeClient: (json['typeClient'] ?? 'particulier').toString(),
-      commentaireActivite: (json['commentaireActivite'] ?? '').toString(),
-      entreprise: json['entreprise'] ?? '',
-      notes: json['notes'] ?? '',
-      statut: json['statut'] ?? 'prospect',
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
-      dernierContactLe: json['dernierContactLe'] != null ? DateTime.parse(json['dernierContactLe']) : null,
+      id: pick(['_id', 'id']),
+      nom: pick(['nom']),
+      prenom: pick(['prenom']),
+      telephone: pick(['telephone']),
+      email: pick(['email']),
+      adresse: pick([
+        'adresse',
+        'address',
+        'adresse_complete',
+        'adresseComplete',
+        'localisation',
+      ]),
+      typeClient: pick(['typeClient', 'type_client']).isEmpty ? 'particulier' : pick(['typeClient', 'type_client']),
+      commentaireActivite: pick([
+        'commentaireActivite',
+        'commentaire_activite',
+        'activite_entreprise',
+        'activiteEntreprise',
+        'activite',
+        'activite_principale',
+        'activitePrincipale',
+        'secteur_activite',
+        'secteurActivite',
+        'activity_comment',
+        'company_activity',
+      ]),
+      entreprise: pick(['entreprise', 'company', 'societe', 'societe_nom']),
+      notes: pick(['notes']),
+      statut: pick(['statut', 'status']).isEmpty ? 'prospect' : pick(['statut', 'status']),
+      createdAt: pick(['createdAt', 'created_at']).isNotEmpty ? DateTime.parse(pick(['createdAt', 'created_at'])) : null,
+      dernierContactLe: pick(['dernierContactLe', 'dernier_contact_le']).isNotEmpty
+          ? DateTime.parse(pick(['dernierContactLe', 'dernier_contact_le']))
+          : null,
       chiffreAffairesCumul: (json['chiffreAffairesCumul'] ?? 0).toDouble(),
     );
   }

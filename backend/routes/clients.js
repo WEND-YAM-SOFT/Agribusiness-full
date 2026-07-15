@@ -98,15 +98,26 @@ async function updateClientCompat(client, companyId, clientId, updates) {
 }
 
 function mapClientRow(row) {
-  const adresse = pickFirstNonEmpty(row.adresse, row.address);
+  const adresse = pickFirstNonEmpty(
+    row.adresse,
+    row.address,
+    row.adresse_complete,
+    row.adresseComplete,
+    row.localisation,
+  );
   const commentaireActivite = pickFirstNonEmpty(
     row.commentaire_activite,
     row.commentaireActivite,
     row.activite_entreprise,
     row.activiteEntreprise,
     row.activite,
+    row.activite_principale,
+    row.activitePrincipale,
+    row.secteur_activite,
+    row.secteurActivite,
     row.activity_comment,
     row.company_activity,
+    row.notes,
   );
   const entreprise = pickFirstNonEmpty(row.entreprise, row.company, row.societe, row.societe_nom);
 

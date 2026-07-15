@@ -1,7 +1,7 @@
 const express = require('express');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
-const { requirePermission } = require('../middleware/auth');
+const { requirePermission, requireAnyPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -403,16 +403,27 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
   }
 });
 
-router.delete('/:id', requirePermission('clients.delete'), async (req, res) => {
+router.delete('/:id', requireAnyPermission(['clients.delete', 'clients.update']), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
+
+    const existing = await client
+      .from('clients')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (existing.error) return res.status(500).json({ message: existing.error.message });
+    if (!existing.data || !isFournisseurRow(existing.data)) {
+      return res.status(404).json({ message: 'Fournisseur non trouvé' });
+    }
 
     const removed = await client
       .from('clients')
       .delete()
       .eq('company_id', companyId)
-      .eq('statut', 'fournisseur')
       .eq('id', req.params.id)
       .select('id')
       .maybeSingle();
