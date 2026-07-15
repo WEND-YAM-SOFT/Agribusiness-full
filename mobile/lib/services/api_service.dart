@@ -241,6 +241,26 @@ class ApiService {
         _ensureSuccess(await _delete('/clients/$id'));
     }
 
+    // FOURNISSEURS
+    static Future<List<dynamic>> getFournisseurs({String? q}) async {
+        final params = <String, String>{};
+        if (q != null && q.isNotEmpty) params['q'] = q;
+        return List<dynamic>.from(_ensureSuccess(await _get('/fournisseurs', query: params)) ?? []);
+    }
+
+    static Future<List<dynamic>> rechercherFournisseurs(String query) async =>
+            List<dynamic>.from(_ensureSuccess(await _get('/fournisseurs/recherche', query: {'q': query})) ?? []);
+
+    static Future<Map<String, dynamic>> creerFournisseur(Map<String, dynamic> data) async =>
+            Map<String, dynamic>.from(_ensureSuccess(await _post('/fournisseurs', body: data), accepted: const [201]));
+
+    static Future<Map<String, dynamic>> mettreAJourFournisseur(String id, Map<String, dynamic> data) async =>
+            Map<String, dynamic>.from(_ensureSuccess(await _put('/fournisseurs/$id', body: data)));
+
+    static Future<void> supprimerFournisseur(String id) async {
+        _ensureSuccess(await _delete('/fournisseurs/$id'));
+    }
+
   // COMMANDES
   static Future<List<dynamic>> getCommandes() async =>
       List<dynamic>.from(_ensureSuccess(await _get('/commandes')) ?? []);

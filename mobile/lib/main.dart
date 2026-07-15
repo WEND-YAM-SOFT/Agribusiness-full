@@ -4,6 +4,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'providers/bandes_provider.dart';
 import 'providers/clients_provider.dart';
+import 'providers/fournisseurs_provider.dart';
 import 'providers/commandes_provider.dart';
 import 'providers/stocks_provider.dart';
 import 'providers/alertes_provider.dart';
@@ -28,6 +29,7 @@ class AgriBusiness extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AdminProvider()),
         ChangeNotifierProvider(create: (_) => BandesProvider()),
         ChangeNotifierProvider(create: (_) => ClientsProvider()),
+        ChangeNotifierProvider(create: (_) => FournisseursProvider()),
         ChangeNotifierProvider(create: (_) => CommandesProvider()),
         ChangeNotifierProvider(create: (_) => StocksProvider()),
         ChangeNotifierProvider(create: (_) => AlertesProvider()),

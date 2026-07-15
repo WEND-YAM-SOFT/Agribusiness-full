@@ -13,6 +13,7 @@ app.use(bodyParser.json());
 // Routes
 const bandesRoutes = require('./routes/bandes');
 const clientsRoutes = require('./routes/clients');
+const fournisseursRoutes = require('./routes/fournisseurs');
 const commandesRoutes = require('./routes/commandes');
 const stocksRoutes = require('./routes/stocks');
 const alertesRoutes = require('./routes/alertes');
@@ -27,6 +28,7 @@ const financeRoutes = require('./routes/finance');
 app.use('/api/auth', authRoutes);
 app.use('/api/bandes', authenticate, bandesRoutes);
 app.use('/api/clients', authenticate, clientsRoutes);
+app.use('/api/fournisseurs', authenticate, fournisseursRoutes);
 app.use('/api/commandes', authenticate, commandesRoutes);
 app.use('/api/stocks', authenticate, stocksRoutes);
 app.use('/api/alertes', authenticate, alertesRoutes);

@@ -38,7 +38,7 @@ function pickFirstNonEmpty(...values) {
   return '';
 }
 
-async function insertClientCompat(client, payload) {
+async function insertFournisseurCompat(client, payload) {
   let candidate = { ...payload };
   let lastMissingColumn = '';
 
@@ -59,11 +59,13 @@ async function insertClientCompat(client, payload) {
 
   return {
     data: null,
-    error: { message: `Creation client impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})` },
+    error: {
+      message: `Creation fournisseur impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
+    },
   };
 }
 
-async function updateClientCompat(client, companyId, clientId, updates) {
+async function updateFournisseurCompat(client, companyId, fournisseurId, updates) {
   let candidate = { ...updates };
   let lastMissingColumn = '';
 
@@ -72,7 +74,7 @@ async function updateClientCompat(client, companyId, clientId, updates) {
       .from('clients')
       .update(candidate)
       .eq('company_id', companyId)
-      .eq('id', clientId)
+      .eq('id', fournisseurId)
       .select('*')
       .single();
 
@@ -92,12 +94,12 @@ async function updateClientCompat(client, companyId, clientId, updates) {
   return {
     data: null,
     error: {
-      message: `Modification client impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
+      message: `Modification fournisseur impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
     },
   };
 }
 
-function mapClientRow(row) {
+function mapFournisseurRow(row) {
   const adresse = pickFirstNonEmpty(row.adresse, row.address);
   const commentaireActivite = pickFirstNonEmpty(
     row.commentaire_activite,
@@ -117,11 +119,11 @@ function mapClientRow(row) {
     telephone: row.telephone || '',
     email: row.email || '',
     adresse,
-    typeClient: row.type_client || row.typeClient || 'particulier',
+    typeClient: row.type_client || row.typeClient || 'pro',
     commentaireActivite,
     entreprise,
     notes: row.notes || '',
-    statut: row.statut || row.status || 'prospect',
+    statut: 'fournisseur',
     createdAt: row.created_at || row.createdAt,
     updatedAt: row.updated_at || row.updatedAt,
     dernierContactLe: row.dernier_contact_le || row.dernierContactLe,
@@ -139,18 +141,16 @@ router.get('/', requirePermission('clients.read'), async (req, res) => {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
-    const query = client.from('clients').select('*').eq('company_id', companyId).order('nom', { ascending: true });
+    const { data, error } = await client
+      .from('clients')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('nom', { ascending: true });
 
-    const statut = (req.query.statut || '').toString().trim().toLowerCase();
-
-    const { data, error } = await query;
     if (error) return res.status(500).json({ message: error.message });
 
-    const q = (req.query.q || '').toString().trim().toLowerCase();
-    let rows = (data || []).filter((row) => !isFournisseurRow(row));
-    if (statut) {
-      rows = rows.filter((row) => str(row.statut || row.status).toLowerCase() == statut);
-    }
+    const q = str(req.query.q).toLowerCase();
+    let rows = (data || []).filter((row) => isFournisseurRow(row));
     if (q) {
       rows = rows.filter((row) => {
         const fields = [
@@ -173,7 +173,7 @@ router.get('/', requirePermission('clients.read'), async (req, res) => {
       });
     }
 
-    return res.json(rows.map(mapClientRow));
+    return res.json(rows.map(mapFournisseurRow));
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -192,9 +192,9 @@ router.get('/recherche', requirePermission('clients.read'), async (req, res) => 
 
     if (error) return res.status(500).json({ message: error.message });
 
-    const q = (req.query.q || '').toString().trim().toLowerCase();
+    const q = str(req.query.q).toLowerCase();
     const rows = (data || [])
-      .filter((row) => !isFournisseurRow(row))
+      .filter((row) => isFournisseurRow(row))
       .filter((row) => {
         const fields = [
           row.nom,
@@ -215,7 +215,7 @@ router.get('/recherche', requirePermission('clients.read'), async (req, res) => 
         return fields.some((v) => (v || '').toString().toLowerCase().includes(q));
       });
 
-    return res.json(rows.map(mapClientRow));
+    return res.json(rows.map(mapFournisseurRow));
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -234,10 +234,9 @@ router.get('/:id', requirePermission('clients.read'), async (req, res) => {
       .maybeSingle();
 
     if (error) return res.status(500).json({ message: error.message });
-    if (!data) return res.status(404).json({ message: 'Client non trouvé' });
-    if (isFournisseurRow(data)) return res.status(404).json({ message: 'Client non trouvé' });
+    if (!data || !isFournisseurRow(data)) return res.status(404).json({ message: 'Fournisseur non trouvé' });
 
-    return res.json(mapClientRow(data));
+    return res.json(mapFournisseurRow(data));
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -249,12 +248,12 @@ router.post('/', requirePermission('clients.create'), async (req, res) => {
     const prenom = str(req.body.prenom);
     const telephone = normalizeInternationalPhone(req.body.telephone || '');
     if (!nom || !prenom || !telephone) {
-      return res.status(400).json({ message: 'Les champs obligatoires client sont: nom, prenom, telephone' });
+      return res.status(400).json({ message: 'Les champs obligatoires fournisseur sont: nom, prenom, telephone' });
     }
 
     const adresse = pickFirstNonEmpty(req.body.adresse, req.body.address);
-    const rawTypeClient = (req.body.typeClient || req.body.type_client || '').toString().trim().toLowerCase();
-    const typeClient = rawTypeClient === 'professionnel' ? 'pro' : (rawTypeClient || 'particulier');
+    const rawTypeClient = str(req.body.typeClient || req.body.type_client).toLowerCase();
+    const typeClient = rawTypeClient === 'professionnel' ? 'pro' : (rawTypeClient || 'pro');
     const commentaireActivite = pickFirstNonEmpty(
       req.body.commentaireActivite,
       req.body.commentaire_activite,
@@ -280,7 +279,7 @@ router.post('/', requirePermission('clients.create'), async (req, res) => {
       telephone,
       email: str(req.body.email),
       type_client: typeClient,
-      statut: str(req.body.statut) || 'prospect',
+      statut: 'fournisseur',
       notes: str(req.body.notes),
       dernier_contact_le: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -305,10 +304,10 @@ router.post('/', requirePermission('clients.create'), async (req, res) => {
       payload.societe = entreprise;
     }
 
-    const { data, error } = await insertClientCompat(client, payload);
+    const { data, error } = await insertFournisseurCompat(client, payload);
     if (error) return res.status(400).json({ message: error.message });
 
-    return res.status(201).json(mapClientRow(data));
+    return res.status(201).json(mapFournisseurRow(data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
   }
@@ -327,8 +326,9 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       .maybeSingle();
 
     if (existing.error) return res.status(400).json({ message: existing.error.message });
-    if (!existing.data) return res.status(404).json({ message: 'Client non trouvé' });
-    if (isFournisseurRow(existing.data)) return res.status(404).json({ message: 'Client non trouvé' });
+    if (!existing.data || !isFournisseurRow(existing.data)) {
+      return res.status(404).json({ message: 'Fournisseur non trouvé' });
+    }
 
     if (req.body.typeClient && !['pro', 'particulier'].includes(req.body.typeClient)) {
       return res.status(400).json({ message: 'typeClient invalide (pro ou particulier)' });
@@ -336,6 +336,7 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
 
     const updates = {
       updated_at: new Date().toISOString(),
+      statut: 'fournisseur',
     };
 
     if (req.body.nom !== undefined) updates.nom = req.body.nom;
@@ -353,7 +354,6 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       updates.societe = entreprise;
     }
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
-    if (req.body.statut !== undefined) updates.statut = req.body.statut;
 
     if (req.body.adresse !== undefined || req.body.address !== undefined) {
       const adresse = pickFirstNonEmpty(req.body.adresse, req.body.address);
@@ -394,10 +394,10 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       updates.type_client = req.body.typeClient;
     }
 
-    const saved = await updateClientCompat(client, companyId, req.params.id, updates);
+    const saved = await updateFournisseurCompat(client, companyId, req.params.id, updates);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
-    return res.json(mapClientRow(saved.data));
+    return res.json(mapFournisseurRow(saved.data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
   }
@@ -412,15 +412,15 @@ router.delete('/:id', requirePermission('clients.delete'), async (req, res) => {
       .from('clients')
       .delete()
       .eq('company_id', companyId)
-      .neq('statut', 'fournisseur')
+      .eq('statut', 'fournisseur')
       .eq('id', req.params.id)
       .select('id')
       .maybeSingle();
 
     if (removed.error) return res.status(500).json({ message: removed.error.message });
-    if (!removed.data) return res.status(404).json({ message: 'Client non trouvé' });
+    if (!removed.data) return res.status(404).json({ message: 'Fournisseur non trouvé' });
 
-    return res.json({ message: 'Client supprimé' });
+    return res.json({ message: 'Fournisseur supprimé' });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

@@ -5,6 +5,7 @@ import '../models/tache_crm.dart';
 import '../providers/auth_provider.dart';
 import '../providers/clients_provider.dart';
 import '../providers/crm_provider.dart';
+import 'fournisseurs_tab.dart';
 import 'commandes_screen.dart';
 import '../utils/money_format.dart';
 import '../widgets/iso_calendar_picker.dart';
@@ -26,7 +27,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initialiserFiltresClients();
       context.read<CrmProvider>().chargerTachesCrm();
@@ -57,6 +58,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
           controller: _tabController,
           tabs: const [
             Tab(icon: Icon(Icons.people_outline), text: 'Clients'),
+            Tab(icon: Icon(Icons.business_outlined), text: 'Fournisseurs'),
             Tab(icon: Icon(Icons.forum_outlined), text: 'Interactions'),
             Tab(icon: Icon(Icons.task_alt_outlined), text: 'Relances'),
             Tab(icon: Icon(Icons.shopping_cart_outlined), text: 'Commandes'),
@@ -67,6 +69,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
         controller: _tabController,
         children: [
           _clientsTab(),
+          const FournisseursTab(),
           _interactionsTab(),
           _tachesTab(),
           const CommandesScreen(embedded: true),
@@ -174,7 +177,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                       ),
                       onTap: () {
                         setState(() => selectedClient = c);
-                        _tabController.animateTo(1);
+                        _tabController.animateTo(2);
                         context.read<CrmProvider>().chargerInteractionsClient(c.id!);
                       },
                     ),
