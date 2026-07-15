@@ -19,7 +19,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     {'value': 'gestionnaire_ferme', 'label': 'Gestionnaire de ferme'},
     {'value': 'commercial', 'label': 'Commercial'},
     {'value': 'technicien', 'label': 'Technicien'},
-    {'value': 'utilisateur', 'label': 'Utilisateur'},
   ];
 
   String _roleLabel(String roleValue) {
@@ -682,10 +681,11 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     );
 
     if (ok != true || !mounted) return;
-    final deleted = await context.read<AdminProvider>().deleteUser(id);
+    final admin = context.read<AdminProvider>();
+    final deleted = await admin.deleteUser(id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(deleted ? 'Utilisateur supprimé' : 'Erreur suppression utilisateur')),
+      SnackBar(content: Text(deleted ? 'Utilisateur supprimé' : 'Erreur suppression utilisateur: ${admin.lastError ?? 'inconnue'}')),
     );
   }
 }

@@ -37,9 +37,7 @@ function parseArgs() {
 function inferRole(oldRole, fallbackRole) {
   const raw = (oldRole || '').toString().trim().toLowerCase();
   const normalized = normalizeRole(raw);
-
-  if (normalized !== 'utilisateur') return normalized;
-  if (!raw || raw === 'utilisateur' || raw === 'user') return 'utilisateur';
+  if (normalized) return normalized;
   return fallbackRole;
 }
 

@@ -214,7 +214,7 @@ router.post('/connexion', async (req, res) => {
         .insert({
           id: login.data.user.id,
           company_id: companyId,
-          role: 'utilisateur',
+          role: 'technicien',
           full_name: fullName || email,
         })
         .select('*')

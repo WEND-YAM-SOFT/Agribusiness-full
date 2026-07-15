@@ -3,7 +3,6 @@ const KNOWN_ROLES = new Set([
   'gestionnaire_ferme',
   'commercial',
   'technicien',
-  'utilisateur',
 ]);
 
 const ROLE_ALIASES = {
@@ -16,7 +15,9 @@ const ROLE_ALIASES = {
   sales: 'commercial',
   technique: 'technicien',
   technician: 'technicien',
-  agent: 'utilisateur',
+  agent: 'technicien',
+  utilisateur: 'technicien',
+  user: 'technicien',
   viewer: 'technicien',
 };
 
@@ -68,14 +69,13 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'dashboard.tech',
     'achats.request',
   ],
-  utilisateur: [],
 };
 
 function normalizeRole(value) {
   const input = (value || '').toString().trim().toLowerCase();
   const mapped = ROLE_ALIASES[input] || input;
   if (KNOWN_ROLES.has(mapped)) return mapped;
-  return 'utilisateur';
+  return 'technicien';
 }
 
 function isAdminRole(role) {

@@ -438,10 +438,11 @@ class _CommandesScreenState extends State<CommandesScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    final ok = await context.read<CommandesProvider>().effacerHistoriqueCommandes();
+    final provider = context.read<CommandesProvider>();
+    final ok = await provider.effacerHistoriqueCommandes();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? 'Historique des commandes effacé' : 'Suppression impossible')),
+      SnackBar(content: Text(ok ? 'Historique des commandes effacé' : 'Suppression impossible: ${provider.lastError ?? 'cause inconnue'}')),
     );
   }
 

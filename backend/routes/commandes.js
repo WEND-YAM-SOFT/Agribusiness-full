@@ -980,20 +980,33 @@ router.delete('/historique/all', requirePermission('commandes.historique.purge')
 
     let totalDeleted = 0;
 
-    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
-      const selectRes = await apiClient
-        .from('commandes')
-        .select('id')
-        .eq(companyColumn, companyId)
-        .or('statut.eq.payee,status.eq.payee');
+    const statusFilters = [
+      { column: 'statut', value: 'payee' },
+      { column: 'status', value: 'payee' },
+    ];
 
-      if (selectRes.error) {
-        const missing = extractMissingColumn(selectRes.error);
-        if (missing === companyColumn) continue;
-        return res.status(500).json({ message: selectRes.error.message });
+    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+      const idsSet = new Set();
+
+      for (const filter of statusFilters) {
+        const selectRes = await apiClient
+          .from('commandes')
+          .select('id')
+          .eq(companyColumn, companyId)
+          .eq(filter.column, filter.value);
+
+        if (selectRes.error) {
+          const missing = extractMissingColumn(selectRes.error);
+          if (missing === companyColumn || missing === filter.column) continue;
+          return res.status(500).json({ message: selectRes.error.message });
+        }
+
+        for (const row of (selectRes.data || [])) {
+          if (row?.id) idsSet.add(row.id);
+        }
       }
 
-      const ids = (selectRes.data || []).map((r) => r.id).filter(Boolean);
+      const ids = Array.from(idsSet);
       if (!ids.length) continue;
 
       const delRes = await apiClient

@@ -59,16 +59,19 @@ class AdminProvider with ChangeNotifier {
 
   Future<bool> updateUser(String id, Map<String, dynamic> data) async {
     try {
+      _lastError = null;
       await ApiService.updateUtilisateur(id, data);
       await loadAll();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return false;
     }
   }
 
   Future<bool> toggleUserActive(String id, bool active) async {
     try {
+      _lastError = null;
       if (active) {
         await ApiService.activerUtilisateur(id);
       } else {
@@ -76,47 +79,56 @@ class AdminProvider with ChangeNotifier {
       }
       await loadAll();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return false;
     }
   }
 
   Future<String?> resetPassword(String id) async {
     try {
+      _lastError = null;
       final resp = await ApiService.resetMotDePasseUtilisateur(id);
       await loadAll();
       return resp['motDePasseTemporaire'] as String?;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return null;
     }
   }
 
   Future<bool> deleteUser(String id) async {
     try {
+      _lastError = null;
       await ApiService.supprimerUtilisateur(id);
       await loadAll();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return false;
     }
   }
 
   Future<bool> updateConfig(Map<String, dynamic> data) async {
     try {
+      _lastError = null;
       _config = await ApiService.updateConfig(data);
       notifyListeners();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return false;
     }
   }
 
   Future<bool> clearAuditLogs() async {
     try {
+      _lastError = null;
       await ApiService.effacerAuditLogs();
       await loadAll();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '').trim();
       return false;
     }
   }

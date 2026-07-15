@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/client.dart';
 import '../models/tache_crm.dart';
+import '../providers/auth_provider.dart';
 import '../providers/clients_provider.dart';
 import '../providers/crm_provider.dart';
 import 'commandes_screen.dart';
@@ -79,6 +80,10 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
       builder: (context, provider, child) {
         if (provider.isLoading) return const Center(child: CircularProgressIndicator());
 
+        final auth = context.watch<AuthProvider>();
+        final role = (auth.user?['role'] ?? '').toString();
+        final canDeleteClient = auth.hasPermission('clients.delete') || role == 'gestionnaire_ferme';
+
         return Column(
           children: [
             Padding(
@@ -142,11 +147,17 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                       title: Text(c.nomComplet),
                       subtitle: Text('${c.telephone} • ${c.statut}'),
                       trailing: SizedBox(
-                        width: 140,
+                        width: canDeleteClient ? 178 : 140,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Flexible(child: Text(formatAmountFcfa(c.chiffreAffairesCumul), overflow: TextOverflow.ellipsis)),
+                            if (canDeleteClient)
+                              IconButton(
+                                tooltip: 'Supprimer client',
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                onPressed: () => _confirmDeleteClient(c),
+                              ),
                             IconButton(
                               tooltip: 'Modifier client',
                               icon: const Icon(Icons.edit),
@@ -374,6 +385,45 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _confirmDeleteClient(Client client) async {
+    final clientId = client.id;
+    if (clientId == null || clientId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Client invalide, recharge la liste puis réessaie')),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer client'),
+        content: Text('Supprimer "${client.nomComplet}" ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final deleted = await context.read<ClientsProvider>().supprimerClient(clientId);
+    if (!mounted) return;
+
+    if (deleted && selectedClient?.id == clientId) {
+      setState(() => selectedClient = null);
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(deleted ? 'Client supprimé' : 'Suppression client impossible')),
     );
   }
 

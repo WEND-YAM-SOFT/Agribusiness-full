@@ -89,6 +89,33 @@ function normalizeInternationalPhone(value) {
   return `${countryCode} ${grouped.join(' ')}`.trim();
 }
 
+function isSchemaMissingError(error) {
+  const message = (error?.message || '').toString().toLowerCase();
+  return message.includes('could not find the')
+    || message.includes('does not exist')
+    || message.includes('schema cache');
+}
+
+function isNotFoundError(error) {
+  const message = (error?.message || '').toString().toLowerCase();
+  return message.includes('not found');
+}
+
+async function cleanupUserSqlReferences(client, userId) {
+  const tokenDelete = await client.from('password_reset_tokens').delete().eq('user_id', userId);
+  if (tokenDelete.error && !isSchemaMissingError(tokenDelete.error)) {
+    throw new Error(tokenDelete.error.message);
+  }
+
+  const auditDetach = await client
+    .from('audit_logs')
+    .update({ user_id: null })
+    .eq('user_id', userId);
+  if (auditDetach.error && !isSchemaMissingError(auditDetach.error)) {
+    throw new Error(auditDetach.error.message);
+  }
+}
+
 router.get('/', async (req, res) => {
   try {
     const client = getAdminClient();
@@ -356,20 +383,31 @@ router.delete('/:id', async (req, res) => {
 
     const client = getAdminClient();
     const userData = await client.auth.admin.getUserById(req.params.id);
-    if (userData.error || !userData.data?.user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    if (userData.error && !isNotFoundError(userData.error)) {
+      return res.status(400).json({ message: userData.error.message });
+    }
+    const authUser = userData.data?.user || null;
 
     const profile = await client.from('profiles').select('*').eq('id', req.params.id).maybeSingle();
     if (profile.error) return res.status(400).json({ message: profile.error.message });
 
-    const deletedProfile = await client.from('profiles').delete().eq('id', req.params.id);
-    if (deletedProfile.error) return res.status(400).json({ message: deletedProfile.error.message });
+    if (!authUser && !profile.data) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
 
-    const deleted = await client.auth.admin.deleteUser(req.params.id);
-    if (deleted.error) {
-      if (profile.data) {
-        await client.from('profiles').upsert(profile.data);
+    // Prevent FK issues by detaching/resetting SQL references before deleting profile/auth user.
+    await cleanupUserSqlReferences(client, req.params.id);
+
+    if (profile.data) {
+      const deletedProfile = await client.from('profiles').delete().eq('id', req.params.id);
+      if (deletedProfile.error) return res.status(400).json({ message: deletedProfile.error.message });
+    }
+
+    if (authUser) {
+      const deleted = await client.auth.admin.deleteUser(req.params.id);
+      if (deleted.error && !isNotFoundError(deleted.error)) {
+        return res.status(400).json({ message: deleted.error.message });
       }
-      return res.status(400).json({ message: deleted.error.message });
     }
 
     await logAudit(client, {
@@ -378,7 +416,7 @@ router.delete('/:id', async (req, res) => {
       action: 'user.delete',
       targetType: 'Utilisateur',
       targetId: req.params.id,
-      metadata: { email: userData.data.user.email },
+      metadata: { email: authUser?.email || profile.data?.email || '' },
       ip: '',
     });
 
