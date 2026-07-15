@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -265,7 +265,7 @@ async function getBandeOr404(api, companyId, id, res) {
   return result.data;
 }
 
-router.get('/actives', async (req, res) => {
+router.get('/actives', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -277,7 +277,7 @@ router.get('/actives', async (req, res) => {
   }
 });
 
-router.get('/historique', async (req, res) => {
+router.get('/historique', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -289,7 +289,7 @@ router.get('/historique', async (req, res) => {
   }
 });
 
-router.get('/performances/batiment', async (req, res) => {
+router.get('/performances/batiment', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -321,7 +321,7 @@ router.get('/performances/batiment', async (req, res) => {
   }
 });
 
-router.get('/comparaison', async (req, res) => {
+router.get('/comparaison', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -353,7 +353,7 @@ router.get('/comparaison', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -365,7 +365,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.get('/:id/stats', async (req, res) => {
+router.get('/:id/stats', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -401,7 +401,7 @@ router.get('/:id/stats', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('bandes.create'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -441,7 +441,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('bandes.update'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -482,7 +482,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.put('/:id/fermer', async (req, res) => {
+router.put('/:id/fermer', requirePermission('bandes.close'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -502,7 +502,7 @@ router.put('/:id/fermer', async (req, res) => {
   }
 });
 
-router.post('/:id/suivi', async (req, res) => {
+router.post('/:id/suivi', requirePermission('bandes.suivi.create'), async (req, res) => {
   try {
     const alimentationKg = Number(req.body.alimentationKg || 0);
     const alimentationStockId = (req.body.alimentationStockId || '').toString().trim();
@@ -608,7 +608,7 @@ router.post('/:id/suivi', async (req, res) => {
   }
 });
 
-router.post('/:id/mortalite', async (req, res) => {
+router.post('/:id/mortalite', requirePermission('bandes.mortalite.create'), async (req, res) => {
   try {
     const mortaliteJour = Number(req.body.mortaliteJour);
     const observations = (req.body.observations || '').toString().trim();
@@ -661,7 +661,7 @@ router.post('/:id/mortalite', async (req, res) => {
   }
 });
 
-router.post('/:id/poids', async (req, res) => {
+router.post('/:id/poids', requirePermission('bandes.poids.create'), async (req, res) => {
   try {
     const poids = Number(req.body.poidsMotenG || 0);
     if (poids <= 0) return res.status(400).json({ message: 'Le poids moyen doit être supérieur à 0' });
@@ -690,7 +690,7 @@ router.post('/:id/poids', async (req, res) => {
   }
 });
 
-router.get('/:id/poids', async (req, res) => {
+router.get('/:id/poids', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -709,7 +709,7 @@ router.get('/:id/poids', async (req, res) => {
   }
 });
 
-router.post('/:id/climat', async (req, res) => {
+router.post('/:id/climat', requirePermission('bandes.climat.create'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -737,7 +737,7 @@ router.post('/:id/climat', async (req, res) => {
   }
 });
 
-router.get('/:id/climat', async (req, res) => {
+router.get('/:id/climat', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -756,7 +756,7 @@ router.get('/:id/climat', async (req, res) => {
   }
 });
 
-router.get('/:id/suivis', async (req, res) => {
+router.get('/:id/suivis', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -768,7 +768,7 @@ router.get('/:id/suivis', async (req, res) => {
   }
 });
 
-router.post('/:id/sante', async (req, res) => {
+router.post('/:id/sante', requirePermission('bandes.sante.create'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -795,7 +795,7 @@ router.post('/:id/sante', async (req, res) => {
   }
 });
 
-router.get('/:id/sante', async (req, res) => {
+router.get('/:id/sante', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -807,7 +807,7 @@ router.get('/:id/sante', async (req, res) => {
   }
 });
 
-router.get('/:id/evenements-previsionnels', async (req, res) => {
+router.get('/:id/evenements-previsionnels', requirePermission('bandes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -820,7 +820,7 @@ router.get('/:id/evenements-previsionnels', async (req, res) => {
   }
 });
 
-router.post('/:id/evenements-previsionnels', async (req, res) => {
+router.post('/:id/evenements-previsionnels', requirePermission('bandes.events.manage'), async (req, res) => {
   try {
     if (!req.body.datePrevue || !req.body.description) {
       return res.status(400).json({ message: 'datePrevue et description sont obligatoires' });
@@ -860,7 +860,7 @@ router.post('/:id/evenements-previsionnels', async (req, res) => {
   }
 });
 
-router.put('/:id/evenements-previsionnels/:eventId/terminer', async (req, res) => {
+router.put('/:id/evenements-previsionnels/:eventId/terminer', requirePermission('bandes.events.manage'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -953,7 +953,7 @@ router.put('/:id/evenements-previsionnels/:eventId/terminer', async (req, res) =
   }
 });
 
-router.delete('/:id', requireRole('admin'), async (req, res) => {
+router.delete('/:id', requireRole('admin'), requirePermission('bandes.delete'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);

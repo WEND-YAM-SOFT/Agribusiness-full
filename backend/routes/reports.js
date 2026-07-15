@@ -3,6 +3,7 @@ const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requireAnyPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -37,7 +38,7 @@ async function computeGlobalKpi(api, companyId) {
   };
 }
 
-router.get('/global.pdf', async (req, res) => {
+router.get('/global.pdf', requireAnyPermission(['reports.sales', 'reports.tech', 'reports.full']), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -62,7 +63,7 @@ router.get('/global.pdf', async (req, res) => {
   }
 });
 
-router.get('/global.xlsx', async (req, res) => {
+router.get('/global.xlsx', requireAnyPermission(['reports.sales', 'reports.tech', 'reports.full']), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);

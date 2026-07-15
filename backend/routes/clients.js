@@ -1,6 +1,7 @@
 const express = require('express');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -70,7 +71,7 @@ function mapClientRow(row) {
   };
 }
 
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('clients.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -107,7 +108,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/recherche', async (req, res) => {
+router.get('/recherche', requirePermission('clients.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -139,7 +140,7 @@ router.get('/recherche', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('clients.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -160,7 +161,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('clients.create'), async (req, res) => {
   try {
     const nom = (req.body.nom || '').toString().trim();
     const prenom = (req.body.prenom || '').toString().trim();
@@ -206,7 +207,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('clients.update'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -272,7 +273,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('clients.delete'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);

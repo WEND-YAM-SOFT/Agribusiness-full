@@ -282,6 +282,10 @@ class ApiService {
   static Future<Map<String, dynamic>> getHistoriqueCommande(String commandeId) async =>
       Map<String, dynamic>.from(_ensureSuccess(await _get('/commandes/historique/$commandeId')));
 
+    static Future<void> effacerHistoriqueCommandes() async {
+        _ensureSuccess(await _delete('/commandes/historique/all'));
+    }
+
   // TRESORERIE / FINANCE
   static Future<Map<String, dynamic>> getSoldeTresorerie() async =>
       Map<String, dynamic>.from(_ensureSuccess(await _get('/finance/solde')));

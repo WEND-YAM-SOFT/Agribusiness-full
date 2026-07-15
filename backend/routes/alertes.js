@@ -1,6 +1,7 @@
 const express = require('express');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -68,7 +69,7 @@ async function getBandeNameMap(api, companyId) {
   return new Map((b.data || []).map((x) => [x.id, x.nom || '']));
 }
 
-router.get('/actives', async (req, res) => {
+router.get('/actives', requirePermission('alertes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -90,7 +91,7 @@ router.get('/actives', async (req, res) => {
   }
 });
 
-router.get('/automatiques', async (req, res) => {
+router.get('/automatiques', requirePermission('alertes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -246,7 +247,7 @@ router.get('/automatiques', async (req, res) => {
   }
 });
 
-router.get('/aujourdhui', async (req, res) => {
+router.get('/aujourdhui', requirePermission('alertes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -273,7 +274,7 @@ router.get('/aujourdhui', async (req, res) => {
   }
 });
 
-router.get('/retard', async (req, res) => {
+router.get('/retard', requirePermission('alertes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -295,7 +296,7 @@ router.get('/retard', async (req, res) => {
   }
 });
 
-router.get('/historique', async (req, res) => {
+router.get('/historique', requirePermission('alertes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -317,7 +318,7 @@ router.get('/historique', async (req, res) => {
   }
 });
 
-router.get('/automatiques/historique', async (req, res) => {
+router.get('/automatiques/historique', requirePermission('alertes.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -339,7 +340,7 @@ router.get('/automatiques/historique', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('alertes.create'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -368,7 +369,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('alertes.update'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -420,7 +421,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.put('/:id/fait', async (req, res) => {
+router.put('/:id/fait', requirePermission('alertes.mark_done'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -512,7 +513,7 @@ router.put('/:id/fait', async (req, res) => {
   }
 });
 
-router.delete('/historique/all', async (req, res) => {
+router.delete('/historique/all', requirePermission('alertes.historique.purge'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -530,7 +531,7 @@ router.delete('/historique/all', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('alertes.delete'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);

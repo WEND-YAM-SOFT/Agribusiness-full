@@ -1,6 +1,7 @@
 const express = require('express');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ function mapTache(row, client = null, commande = null) {
   };
 }
 
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', requirePermission('crm.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -142,7 +143,7 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-router.get('/clients/:clientId/interactions', async (req, res) => {
+router.get('/clients/:clientId/interactions', requirePermission('crm.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -169,7 +170,7 @@ router.get('/clients/:clientId/interactions', async (req, res) => {
   }
 });
 
-router.post('/clients/:clientId/interactions', async (req, res) => {
+router.post('/clients/:clientId/interactions', requirePermission('crm.interaction.create'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -203,7 +204,7 @@ router.post('/clients/:clientId/interactions', async (req, res) => {
   }
 });
 
-router.get('/taches', async (req, res) => {
+router.get('/taches', requirePermission('crm.tache.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -232,7 +233,7 @@ router.get('/taches', async (req, res) => {
   }
 });
 
-router.post('/taches', async (req, res) => {
+router.post('/taches', requirePermission('crm.tache.create'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -260,7 +261,7 @@ router.post('/taches', async (req, res) => {
   }
 });
 
-router.put('/taches/:id', async (req, res) => {
+router.put('/taches/:id', requirePermission('crm.tache.update'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -298,7 +299,7 @@ router.put('/taches/:id', async (req, res) => {
   }
 });
 
-router.delete('/taches/historique/all', async (req, res) => {
+router.delete('/taches/historique/all', requirePermission('crm.historique.purge'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -311,7 +312,7 @@ router.delete('/taches/historique/all', async (req, res) => {
   }
 });
 
-router.delete('/taches/:id', async (req, res) => {
+router.delete('/taches/:id', requirePermission('crm.tache.delete'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);

@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requirePermission } = require('../middleware/auth');
 const { sendPasswordResetEmail } = require('../services/email_service');
 const { getAdminClient, mapRole, mergeFullName, toPublicUser, logAudit } = require('../services/supabase');
 
@@ -119,7 +119,7 @@ async function buildPublicUser(client, authUser, profile) {
   return toPublicUser(combined, authUser?.email || '');
 }
 
-router.post('/inscription', async (req, res) => {
+router.post('/inscription', authenticate, requirePermission('users.manage'), async (req, res) => {
   try {
     try {
       await ensureInitialAdmin();
@@ -214,7 +214,7 @@ router.post('/connexion', async (req, res) => {
         .insert({
           id: login.data.user.id,
           company_id: companyId,
-          role: 'agent',
+          role: 'utilisateur',
           full_name: fullName || email,
         })
         .select('*')

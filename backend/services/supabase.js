@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { normalizeRole } = require('../config/permissions');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -20,17 +21,11 @@ function getAdminClient() {
 }
 
 function mapRole(role) {
-  const value = (role || '').toString().toLowerCase().trim();
-  if (value === 'admin' || value === 'owner' || value === 'administrateur') return 'admin';
-  if (value === 'viewer') return 'viewer';
-  return 'agent';
+  return normalizeRole(role);
 }
 
 function toAppRole(dbRole) {
-  const value = (dbRole || '').toString().toLowerCase().trim();
-  return value === 'admin' || value === 'owner' || value === 'administrateur'
-    ? 'admin'
-    : 'utilisateur';
+  return normalizeRole(dbRole);
 }
 
 function splitFullName(fullName = '') {

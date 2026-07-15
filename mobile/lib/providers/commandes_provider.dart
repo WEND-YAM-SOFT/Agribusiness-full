@@ -183,6 +183,18 @@ class CommandesProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> effacerHistoriqueCommandes() async {
+    try {
+      await ApiService.effacerHistoriqueCommandes();
+      await chargerCommandes();
+      return true;
+    } catch (e) {
+      _lastError = e.toString();
+      debugPrint('Erreur: $e');
+      return false;
+    }
+  }
+
   Future<void> _restaurerFiltres() async {
     final prefs = await SharedPreferences.getInstance();
     _selectedStatuts = (prefs.getStringList('commandes.selectedStatuts') ?? const []).toSet();

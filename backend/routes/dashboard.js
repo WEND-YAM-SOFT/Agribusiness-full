@@ -1,6 +1,7 @@
 const express = require('express');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requireAnyPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -89,7 +90,7 @@ function interpolateFromCurve(points, age, key) {
   return null;
 }
 
-router.get('/global', async (req, res) => {
+router.get('/global', requireAnyPermission(['dashboard.sales', 'dashboard.tech', 'dashboard.full']), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -201,7 +202,7 @@ router.get('/global', async (req, res) => {
   }
 });
 
-router.get('/bandes/:id/suivi', async (req, res) => {
+router.get('/bandes/:id/suivi', requireAnyPermission(['dashboard.sales', 'dashboard.tech', 'dashboard.full']), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);

@@ -175,6 +175,17 @@ class _CommandesScreenState extends State<CommandesScreen> {
                               subtitle: const Text('Cliquer pour afficher ou masquer l\'historique'),
                               children: [
                                 Padding(
+                                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _showEffacerHistoriqueCommandesDialog(),
+                                      icon: const Icon(Icons.delete_sweep),
+                                      label: const Text('Effacer historique'),
+                                    ),
+                                  ),
+                                ),
+                                Padding(
                                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                                   child: Column(
                                     children: commandesHistorique.map(_buildCommandeCard).toList(),
@@ -406,6 +417,31 @@ class _CommandesScreenState extends State<CommandesScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showEffacerHistoriqueCommandesDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Effacer l\'historique des commandes ?'),
+        content: const Text('Cette action supprimera toutes les commandes payées de l\'historique.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Effacer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final ok = await context.read<CommandesProvider>().effacerHistoriqueCommandes();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Historique des commandes effacé' : 'Suppression impossible')),
     );
   }
 

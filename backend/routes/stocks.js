@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -263,7 +264,7 @@ function mapStockRow(row) {
   };
 }
 
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('stocks.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -282,7 +283,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/categorie/:categorie', async (req, res) => {
+router.get('/categorie/:categorie', requirePermission('stocks.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -301,7 +302,7 @@ router.get('/categorie/:categorie', async (req, res) => {
   }
 });
 
-router.get('/alertes', async (req, res) => {
+router.get('/alertes', requirePermission('stocks.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -316,7 +317,7 @@ router.get('/alertes', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('stocks.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -337,7 +338,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('stocks.create'), async (req, res) => {
   try {
     if (!req.body.date) {
       return res.status(400).json({ message: 'La date est obligatoire' });
@@ -397,7 +398,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.post('/:id/mouvement', async (req, res) => {
+router.post('/:id/mouvement', requirePermission('stocks.mouvement.create'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -525,7 +526,7 @@ router.post('/:id/mouvement', async (req, res) => {
   }
 });
 
-router.delete('/:id/mouvements/:mouvementId', async (req, res) => {
+router.delete('/:id/mouvements/:mouvementId', requirePermission('stocks.mouvement.delete'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -563,7 +564,7 @@ router.delete('/:id/mouvements/:mouvementId', async (req, res) => {
   }
 });
 
-router.delete('/:id/mouvements', async (req, res) => {
+router.delete('/:id/mouvements', requirePermission('stocks.mouvement.delete'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -601,7 +602,7 @@ router.delete('/:id/mouvements', async (req, res) => {
   }
 });
 
-router.get('/:id/mouvements', async (req, res) => {
+router.get('/:id/mouvements', requirePermission('stocks.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -629,7 +630,7 @@ router.get('/:id/mouvements', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('stocks.update'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -664,7 +665,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('stocks.delete'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);

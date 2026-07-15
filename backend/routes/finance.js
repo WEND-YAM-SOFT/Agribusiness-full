@@ -1,6 +1,7 @@
 const express = require('express');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -131,7 +132,7 @@ function inWeekdays(rowDate, weekdays) {
   return weekdays.includes(iso);
 }
 
-router.get('/mouvements', async (req, res) => {
+router.get('/mouvements', requirePermission('finance.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -224,7 +225,7 @@ router.get('/mouvements', async (req, res) => {
   }
 });
 
-router.get('/solde', async (req, res) => {
+router.get('/solde', requirePermission('finance.read'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -254,7 +255,7 @@ router.get('/solde', async (req, res) => {
   }
 });
 
-router.post('/depenses', async (req, res) => {
+router.post('/depenses', requirePermission('finance.write'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -294,7 +295,7 @@ router.post('/depenses', async (req, res) => {
   }
 });
 
-router.post('/approvisionnements', async (req, res) => {
+router.post('/approvisionnements', requirePermission('finance.write'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
@@ -332,7 +333,7 @@ router.post('/approvisionnements', async (req, res) => {
   }
 });
 
-router.delete('/mouvements', async (req, res) => {
+router.delete('/mouvements', requirePermission('finance.delete'), async (req, res) => {
   try {
     const api = getAdminClient();
     const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);

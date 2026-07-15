@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { getAdminClient } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
+const { requirePermission, requireAnyPermission, hasPermission } = require('../middleware/auth');
 
 const router = express.Router();
 const COMMANDES_COMPANY_COLUMNS = ['company_id', 'companyId'];
@@ -126,6 +127,19 @@ function getActorLabel(req) {
   const email = (req.user?.email || '').toString().trim();
   if (!email) return 'Utilisateur';
   return email.includes('@') ? email.split('@')[0] : email;
+}
+
+function hasStatusPermission(req, statut) {
+  if (statut === 'en_preparation' || statut === 'confirmee') {
+    return hasPermission(req, 'commandes.status.prepare');
+  }
+  if (statut === 'payee') {
+    return hasPermission(req, 'commandes.status.pay');
+  }
+  if (statut === 'annulee') {
+    return hasPermission(req, 'commandes.status.cancel');
+  }
+  return false;
 }
 
 function computeProduitsTotal(row) {
@@ -499,7 +513,7 @@ async function getClientsMap(client, companyId, clientIds) {
   return new Map((res.data || []).map((c) => [c.id, c]));
 }
 
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('commandes.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -518,7 +532,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/statut/:statut', async (req, res) => {
+router.get('/statut/:statut', requirePermission('commandes.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -541,7 +555,7 @@ router.get('/statut/:statut', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('commandes.read'), async (req, res) => {
   try {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
@@ -568,7 +582,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('commandes.create'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -652,7 +666,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id/statut', async (req, res) => {
+router.put('/:id/statut', requireAnyPermission(['commandes.status.prepare', 'commandes.status.pay', 'commandes.status.cancel']), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -666,6 +680,9 @@ router.put('/:id/statut', async (req, res) => {
     if (!nouveauStatut) return res.status(400).json({ message: 'Statut obligatoire' });
     if (!ALLOWED_COMMANDE_STATUTS.has(nouveauStatut)) {
       return res.status(400).json({ message: 'Statut commande invalide' });
+    }
+    if (!hasStatusPermission(req, nouveauStatut)) {
+      return res.status(403).json({ message: 'Permission insuffisante pour ce changement de statut' });
     }
     if (isCommandeHistorique(current.data)) {
       return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
@@ -735,7 +752,7 @@ router.put('/:id/statut', async (req, res) => {
   }
 });
 
-router.post('/:id/livraisons', async (req, res) => {
+router.post('/:id/livraisons', requirePermission('commandes.livraison.create'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -789,7 +806,7 @@ router.post('/:id/livraisons', async (req, res) => {
   }
 });
 
-router.put('/:id/livraisons/:livraisonId', async (req, res) => {
+router.put('/:id/livraisons/:livraisonId', requirePermission('commandes.livraison.update'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -838,7 +855,7 @@ router.put('/:id/livraisons/:livraisonId', async (req, res) => {
   }
 });
 
-router.post('/:id/commentaires', async (req, res) => {
+router.post('/:id/commentaires', requirePermission('commandes.comment'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -879,7 +896,7 @@ router.post('/:id/commentaires', async (req, res) => {
   }
 });
 
-router.get('/historique/:id', async (req, res) => {
+router.get('/historique/:id', requirePermission('commandes.historique.read'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -919,7 +936,7 @@ router.get('/historique/:id', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('commandes.update'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
@@ -956,7 +973,51 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/historique/all', requirePermission('commandes.historique.purge'), async (req, res) => {
+  try {
+    const apiClient = getAdminClient();
+    const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
+
+    let totalDeleted = 0;
+
+    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+      const selectRes = await apiClient
+        .from('commandes')
+        .select('id')
+        .eq(companyColumn, companyId)
+        .or('statut.eq.payee,status.eq.payee');
+
+      if (selectRes.error) {
+        const missing = extractMissingColumn(selectRes.error);
+        if (missing === companyColumn) continue;
+        return res.status(500).json({ message: selectRes.error.message });
+      }
+
+      const ids = (selectRes.data || []).map((r) => r.id).filter(Boolean);
+      if (!ids.length) continue;
+
+      const delRes = await apiClient
+        .from('commandes')
+        .delete()
+        .eq(companyColumn, companyId)
+        .in('id', ids);
+
+      if (delRes.error) {
+        const missing = extractMissingColumn(delRes.error);
+        if (missing === companyColumn) continue;
+        return res.status(500).json({ message: delRes.error.message });
+      }
+
+      totalDeleted += ids.length;
+    }
+
+    return res.json({ message: 'Historique des commandes supprimé', deletedCount: totalDeleted });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.delete('/:id', requirePermission('commandes.delete'), async (req, res) => {
   try {
     const apiClient = getAdminClient();
     const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);

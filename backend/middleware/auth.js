@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getAdminClient, toAppRole } = require('../services/supabase');
+const { getRolePermissions, isAdminRole } = require('../config/permissions');
 
 function extractToken(req) {
   const auth = req.headers.authorization || '';
@@ -75,18 +76,39 @@ function requireRole(roles) {
 function requirePermission(permission) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ message: 'Authentification requise' });
-    if (req.user.role === 'admin') return next();
-
-    const permissions = Array.isArray(req.user.permissions) ? req.user.permissions : [];
-    if (!permissions.includes(permission)) {
+    if (!hasPermission(req, permission)) {
       return res.status(403).json({ message: 'Permission insuffisante' });
     }
     next();
   };
 }
 
+function hasPermission(req, permission) {
+  if (!req?.user) return false;
+  if (isAdminRole(req.user.role)) return true;
+
+  const rolePermissions = getRolePermissions(req.user.role);
+  const userPermissions = Array.isArray(req.user.permissions) ? req.user.permissions : [];
+  const allPermissions = new Set([...rolePermissions, ...userPermissions]);
+
+  return allPermissions.has('*') || allPermissions.has(permission);
+}
+
+function requireAnyPermission(permissions) {
+  const allowed = Array.isArray(permissions) ? permissions : [permissions];
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'Authentification requise' });
+    if (allowed.some((permission) => hasPermission(req, permission))) {
+      return next();
+    }
+    return res.status(403).json({ message: 'Permission insuffisante' });
+  };
+}
+
 module.exports = {
   authenticate,
   requireRole,
-  requirePermission
+  requirePermission,
+  requireAnyPermission,
+  hasPermission,
 };
