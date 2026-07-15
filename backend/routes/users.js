@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { getAdminClient, mapRole, mergeFullName, toPublicUser, logAudit } = require('../services/supabase');
+const { getRolePermissions } = require('../config/permissions');
 
 const router = express.Router();
 
@@ -17,15 +18,60 @@ async function getOrCreateDefaultCompanyId(client) {
 
 function toPublic(profile, authUser) {
   const metadata = authUser?.user_metadata || {};
+  const sqlPermissions = Array.isArray(profile?.permissions) ? profile.permissions : [];
+  const authPermissions = Array.isArray(metadata.permissions) ? metadata.permissions : [];
   return toPublicUser({
     ...profile,
     email: authUser?.email || '',
     telephone: metadata.telephone || '',
-    permissions: Array.isArray(metadata.permissions) ? metadata.permissions : [],
+    permissions: sqlPermissions.length ? sqlPermissions : authPermissions,
     actif: metadata.actif !== false,
     must_change_password: metadata.mustChangePassword === true,
     derniere_connexion_at: metadata.derniereConnexionAt || null,
   }, authUser?.email || '');
+}
+
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+async function insertProfileCompat(client, payload) {
+  const firstTry = await client.from('profiles').insert(payload).select('*').single();
+  if (!firstTry.error) return firstTry;
+
+  if (extractMissingColumn(firstTry.error) === 'permissions') {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.permissions;
+    return client.from('profiles').insert(fallbackPayload).select('*').single();
+  }
+
+  return firstTry;
+}
+
+async function updateProfileCompat(client, userId, payload) {
+  const firstTry = await client
+    .from('profiles')
+    .update(payload)
+    .eq('id', userId)
+    .select('*')
+    .single();
+
+  if (!firstTry.error) return firstTry;
+
+  if (extractMissingColumn(firstTry.error) === 'permissions') {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.permissions;
+    return client
+      .from('profiles')
+      .update(fallbackPayload)
+      .eq('id', userId)
+      .select('*')
+      .single();
+  }
+
+  return firstTry;
 }
 
 function normalizeInternationalPhone(value) {
@@ -79,6 +125,8 @@ router.post('/', async (req, res) => {
     const nom = (req.body.nom || '').trim();
     const prenom = (req.body.prenom || '').trim();
     const role = mapRole(req.body.role);
+    const defaultRolePermissions = getRolePermissions(role);
+    const permissions = Array.isArray(req.body.permissions) ? req.body.permissions : defaultRolePermissions;
     const telephone = normalizeInternationalPhone(req.body.telephone || '');
 
     if (!telephone) {
@@ -93,19 +141,20 @@ router.post('/', async (req, res) => {
         nom,
         prenom,
         telephone,
-        permissions: Array.isArray(req.body.permissions) ? req.body.permissions : [],
+        permissions,
         actif: true,
         mustChangePassword: true,
       },
     });
     if (created.error) return res.status(400).json({ message: created.error.message });
 
-    const profileInsert = await client.from('profiles').insert({
+    const profileInsert = await insertProfileCompat(client, {
       id: created.data.user.id,
       company_id: companyId,
       role,
+      permissions,
       full_name: mergeFullName(nom, prenom) || email,
-    }).select('*').single();
+    });
     if (profileInsert.error) {
       // Roll back auth user to avoid a stuck "already registered" email without profile row.
       await client.auth.admin.deleteUser(created.data.user.id);
@@ -148,9 +197,19 @@ router.put('/:id', async (req, res) => {
     if (req.body.telephone !== undefined && !telephone) {
       return res.status(400).json({ message: 'Téléphone invalide. Format attendu: +221 77 12 34 56' });
     }
-    const permissions = Array.isArray(req.body.permissions) ? req.body.permissions : (Array.isArray(metadata.permissions) ? metadata.permissions : []);
+    const currentRoleRes = await client.from('profiles').select('role').eq('id', req.params.id).single();
+    const currentRole = mapRole(currentRoleRes.data?.role);
+    const role = req.body.role !== undefined ? mapRole(req.body.role) : currentRole;
+
+    let permissions;
+    if (Array.isArray(req.body.permissions)) {
+      permissions = req.body.permissions;
+    } else if (req.body.role !== undefined) {
+      permissions = getRolePermissions(role);
+    } else {
+      permissions = Array.isArray(metadata.permissions) ? metadata.permissions : getRolePermissions(role);
+    }
     const actif = req.body.actif !== undefined ? Boolean(req.body.actif) : metadata.actif !== false;
-    const role = req.body.role !== undefined ? mapRole(req.body.role) : mapRole((await client.from('profiles').select('role').eq('id', req.params.id).single()).data?.role);
 
     const authUpdate = await client.auth.admin.updateUserById(req.params.id, {
       email: req.body.email ? String(req.body.email).trim().toLowerCase() : authUser.email,
@@ -165,12 +224,11 @@ router.put('/:id', async (req, res) => {
     });
     if (authUpdate.error) return res.status(400).json({ message: authUpdate.error.message });
 
-    const profileUpdate = await client
-      .from('profiles')
-      .update({ role, full_name: mergeFullName(nom, prenom) || authUpdate.data.user.email })
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const profileUpdate = await updateProfileCompat(client, req.params.id, {
+      role,
+      permissions,
+      full_name: mergeFullName(nom, prenom) || authUpdate.data.user.email,
+    });
     if (profileUpdate.error) return res.status(400).json({ message: profileUpdate.error.message });
 
     await logAudit(client, {

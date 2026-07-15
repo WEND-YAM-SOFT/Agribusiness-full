@@ -14,6 +14,23 @@ class ConfigScreen extends StatefulWidget {
 class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  static const List<Map<String, String>> _userRoleOptions = [
+    {'value': 'admin', 'label': 'Administrateur'},
+    {'value': 'gestionnaire_ferme', 'label': 'Gestionnaire de ferme'},
+    {'value': 'commercial', 'label': 'Commercial'},
+    {'value': 'technicien', 'label': 'Technicien'},
+    {'value': 'utilisateur', 'label': 'Utilisateur'},
+  ];
+
+  String _roleLabel(String roleValue) {
+    final role = (roleValue).toString();
+    final match = _userRoleOptions.cast<Map<String, String>?>().firstWhere(
+          (entry) => entry?['value'] == role,
+          orElse: () => null,
+        );
+    return match?['label'] ?? role;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -103,7 +120,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             return Card(
               child: ListTile(
                 title: Text('${u['nom'] ?? ''} ${u['prenom'] ?? ''}'),
-                subtitle: Text('${u['email']} • rôle: ${u['role']}'),
+                subtitle: Text('${u['email']} • rôle: ${_roleLabel((u['role'] ?? '').toString())}'),
                 trailing: Wrap(
                   spacing: 8,
                   children: [
@@ -132,17 +149,24 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                         final id = (u['id'] ?? u['_id']).toString();
                         if (value == 'delete') {
                           await context.read<AdminProvider>().deleteUser(id);
-                        } else if (value == 'admin') {
-                          await context.read<AdminProvider>().updateUser(id, {'role': 'admin'});
-                        } else if (value == 'utilisateur') {
-                          await context.read<AdminProvider>().updateUser(id, {'role': 'utilisateur'});
+                        } else {
+                          await context.read<AdminProvider>().updateUser(id, {'role': value});
                         }
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'admin', child: Text('Rôle Admin')),
-                        PopupMenuItem(value: 'utilisateur', child: Text('Rôle Utilisateur')),
-                        PopupMenuItem(value: 'delete', child: Text('Supprimer')),
-                      ],
+                      itemBuilder: (_) {
+                        final roleItems = _userRoleOptions
+                            .map(
+                              (entry) => PopupMenuItem<String>(
+                                value: entry['value'],
+                                child: Text('Rôle ${entry['label']}'),
+                              ),
+                            )
+                            .toList();
+                        return [
+                          ...roleItems,
+                          const PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                        ];
+                      },
                     )
                   ],
                 ),
@@ -561,7 +585,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     final email = TextEditingController();
     final phone = TextEditingController();
     final mdp = TextEditingController();
-    String role = 'utilisateur';
+    String role = 'technicien';
 
     showDialog(
       context: context,
@@ -582,11 +606,15 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 TextField(controller: mdp, decoration: const InputDecoration(labelText: 'Mot de passe temporaire')),
                 DropdownButtonFormField<String>(
                   initialValue: role,
-                  items: const [
-                    DropdownMenuItem(value: 'utilisateur', child: Text('Utilisateur')),
-                    DropdownMenuItem(value: 'admin', child: Text('Administrateur')),
-                  ],
-                  onChanged: (v) => setDialog(() => role = v ?? 'utilisateur'),
+                  items: _userRoleOptions
+                      .map(
+                        (entry) => DropdownMenuItem(
+                          value: entry['value'],
+                          child: Text(entry['label'] ?? entry['value'] ?? ''),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setDialog(() => role = v ?? 'technicien'),
                   decoration: const InputDecoration(labelText: 'Rôle'),
                 ),
               ],
