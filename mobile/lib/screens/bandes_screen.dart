@@ -38,7 +38,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestion des Cycles'),
+        title: const Text('Gestion des Bandes'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -57,7 +57,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAjouterBandeDialog(),
         icon: const Icon(Icons.add),
-        label: const Text('Nouveau Cycle'),
+        label: const Text('Nouvelle Bande'),
       ),
     );
   }
@@ -75,8 +75,8 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
               children: [
                 Icon(Icons.egg_outlined, size: 64, color: Colors.grey),
                 SizedBox(height: 16),
-                Text('Aucun cycle actif', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                Text('Appuyez sur + pour ouvrir un cycle'),
+                Text('Aucune bande active', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                Text('Appuyez sur + pour ouvrir une bande'),
               ],
             ),
           );
@@ -100,7 +100,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
         }
         if (provider.bandesHistorique.isEmpty) {
           return const Center(
-            child: Text('Aucun cycle dans l\'historique', style: TextStyle(color: Colors.grey)),
+            child: Text('Aucune bande dans l\'historique', style: TextStyle(color: Colors.grey)),
           );
         }
         return ListView.builder(
@@ -212,8 +212,8 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Fermer le cycle ?'),
-        content: Text('Voulez-vous vraiment fermer le cycle "${bande.nom}" ?'),
+        title: const Text('Fermer la bande ?'),
+        content: Text('Voulez-vous vraiment fermer la bande "${bande.nom}" ?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
           ElevatedButton(
@@ -233,7 +233,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer le cycle fermé ?'),
+        title: const Text('Supprimer la bande fermée ?'),
         content: Text('Cette action est irréversible. Supprimer définitivement "${bande.nom}" de l\'historique ?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
@@ -245,7 +245,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
               final provider = context.read<BandesProvider>();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(ok ? 'Cycle supprimé' : 'Erreur suppression: ${provider.lastError ?? 'cause inconnue'}'),
+                  content: Text(ok ? 'Bande supprimée' : 'Erreur suppression: ${provider.lastError ?? 'cause inconnue'}'),
                   backgroundColor: ok ? Colors.green : Colors.red,
                 ),
               );
@@ -272,12 +272,12 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Ouvrir un nouveau cycle'),
+          title: const Text('Ouvrir une nouvelle bande'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: nomController, decoration: const InputDecoration(labelText: 'Nom du cycle *')),
+                TextField(controller: nomController, decoration: const InputDecoration(labelText: 'Nom de la bande *')),
                 DropdownButtonFormField<String>(
                   initialValue: selectedType,
                   items: const [
@@ -336,7 +336,7 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
                 if (!mounted) return;
                 if (!success) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Maximum 5 cycles ouverts en parallèle')),
+                    const SnackBar(content: Text('Maximum 5 bandes ouvertes en parallèle')),
                   );
                 }
               },

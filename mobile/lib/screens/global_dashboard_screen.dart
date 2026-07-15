@@ -112,19 +112,19 @@ class _GlobalDashboardScreenState extends State<GlobalDashboardScreen> {
                 DropdownButtonFormField<String>(
                   initialValue: provider.selectedBandeId.isEmpty ? '' : provider.selectedBandeId,
                   decoration: const InputDecoration(
-                    labelText: 'Filtrer par cycle',
+                    labelText: 'Filtrer par bande',
                     border: OutlineInputBorder(),
                   ),
                   items: [
                     const DropdownMenuItem<String>(
                       value: '',
-                      child: Text('Tous les cycles'),
+                      child: Text('Toutes les bandes'),
                     ),
                     ...provider.bandesFiltreesPourBatiment.map(
                       (bande) => DropdownMenuItem<String>(
                         value: (bande['id'] ?? bande['_id']).toString(),
                         child: Text(
-                          '${(bande['nom'] ?? 'Cycle').toString()}${(bande['batiment'] ?? '').toString().isNotEmpty ? ' - ${(bande['batiment'] ?? '').toString()}' : ''}',
+                          '${(bande['nom'] ?? 'Bande').toString()}${(bande['batiment'] ?? '').toString().isNotEmpty ? ' - ${(bande['batiment'] ?? '').toString()}' : ''}',
                         ),
                       ),
                     ),

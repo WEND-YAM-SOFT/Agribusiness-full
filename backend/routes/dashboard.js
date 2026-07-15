@@ -127,7 +127,12 @@ router.get('/global', requireAnyPermission(['dashboard.sales', 'dashboard.tech',
       .lte('date_mouvement', dateFilter.end.toISOString());
     if (tresoRes.error) return res.status(500).json({ message: tresoRes.error.message });
 
-    const depenses = (tresoRes.data || []).filter((m) => m.nature === 'sortie');
+    let depenses = (tresoRes.data || []).filter((m) => m.nature === 'sortie');
+    if (bandeId) {
+      depenses = depenses.filter((m) => String(m.reference_id || m.referenceId || '') === String(bandeId));
+    } else if (batiment) {
+      depenses = depenses.filter((m) => bandeIds.has(String(m.reference_id || m.referenceId || '')));
+    }
 
     const chiffreAffairesTotal = commandes.reduce((sum, c) => sum + Number(c.montant_total || 0), 0);
     const depensesTotales = depenses.reduce((sum, d) => sum + Number(d.montant || 0), 0);

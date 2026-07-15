@@ -266,12 +266,27 @@ router.post('/depenses', requirePermission('finance.write'), async (req, res) =>
     const type = (req.body.type || '').toString().trim();
     const montant = Number(req.body.montant || 0);
     const commentaire = (req.body.commentaire || '').toString().trim();
+    const bandeId = (req.body.bandeId || '').toString().trim();
     const date = req.body.date ? new Date(req.body.date) : new Date();
 
     if (!quiNom || !quiPrenom || !categorie || !type || montant <= 0 || Number.isNaN(date.getTime())) {
       return res.status(400).json({
         message: 'Champs obligatoires: quiNom, quiPrenom, categorie, type, montant (>0), date valide',
       });
+    }
+
+    let linkedBande = null;
+    if (bandeId) {
+      const bandeRes = await api
+        .from('bandes')
+        .select('id,nom')
+        .eq('company_id', companyId)
+        .eq('id', bandeId)
+        .maybeSingle();
+
+      if (bandeRes.error) return res.status(400).json({ message: bandeRes.error.message });
+      if (!bandeRes.data) return res.status(400).json({ message: 'Bande non trouvée' });
+      linkedBande = bandeRes.data;
     }
 
     const { data, error } = await insertTresorerieCompat(api, {
@@ -284,8 +299,9 @@ router.post('/depenses', requirePermission('finance.write'), async (req, res) =>
       type,
       montant,
       date_mouvement: date.toISOString(),
-      commentaire,
-      reference_type: 'manuel',
+      commentaire: linkedBande ? `[Bande: ${linkedBande.nom}]${commentaire ? ` ${commentaire}` : ''}` : commentaire,
+      reference_type: linkedBande ? 'Bande' : 'manuel',
+      reference_id: linkedBande ? linkedBande.id : null,
     });
 
     if (error) return res.status(400).json({ message: error.message });

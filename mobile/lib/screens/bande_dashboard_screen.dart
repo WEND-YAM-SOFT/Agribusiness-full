@@ -43,7 +43,7 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
 
     if (data == null) {
       return Scaffold(
-        appBar: AppBar(title: Text('Dashboard cycle ${widget.bande.nom}')),
+        appBar: AppBar(title: Text('Dashboard bande ${widget.bande.nom}')),
         body: const Center(child: Text('Impossible de charger les données')),
       );
     }
@@ -58,7 +58,7 @@ class _BandeDashboardScreenState extends State<BandeDashboardScreen> {
     final perf = data!['performance'] as Map<String, dynamic>;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Dashboard cycle ${widget.bande.nom}')),
+      appBar: AppBar(title: Text('Dashboard bande ${widget.bande.nom}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

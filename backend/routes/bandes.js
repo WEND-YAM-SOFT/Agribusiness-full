@@ -259,7 +259,7 @@ async function getBandeOr404(api, companyId, id, res) {
     return null;
   }
   if (!result.data) {
-    res.status(404).json({ message: 'Cycle non trouvé' });
+    res.status(404).json({ message: 'Bande non trouvée' });
     return null;
   }
   return result.data;
@@ -409,7 +409,7 @@ router.post('/', requirePermission('bandes.create'), async (req, res) => {
     const opened = await api.from('bandes').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('statut', 'ouverte');
     if (opened.error) return res.status(400).json({ message: opened.error.message });
     if ((opened.count || 0) >= 5) {
-      return res.status(400).json({ message: 'Maximum 5 cycles ouverts en parallele' });
+      return res.status(400).json({ message: 'Maximum 5 bandes ouvertes en parallele' });
     }
 
     const dateOuverture = req.body.dateOuverture ? new Date(req.body.dateOuverture) : new Date();
@@ -495,7 +495,7 @@ router.put('/:id/fermer', requirePermission('bandes.close'), async (req, res) =>
       .maybeSingle();
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
-    if (!saved.data) return res.status(404).json({ message: 'Cycle non trouvé' });
+    if (!saved.data) return res.status(404).json({ message: 'Bande non trouvée' });
     return res.json(mapBandeRow(saved.data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -556,7 +556,7 @@ router.post('/:id/suivi', requirePermission('bandes.suivi.create'), async (req, 
       quantite: alimentationKg,
       utilisateur: getUserLabel(req),
       bandeId: bande._id,
-      motif: `Consommation alimentation - suivi cycle ${bande.nom}`,
+      motif: `Consommation alimentation - suivi bande ${bande.nom}`,
       coutUnitaire: Number(stockRes.data.prix_unitaire || 0),
     });
 
@@ -580,7 +580,7 @@ router.post('/:id/suivi', requirePermission('bandes.suivi.create'), async (req, 
         type: alimentationType || stockRes.data.nom,
         montant: movementAmount,
         date_mouvement: suiviDateIso,
-        commentaire: `Consommation alimentation - cycle ${bande.nom}`,
+        commentaire: `Consommation alimentation - bande ${bande.nom}`,
         reference_type: 'Bande',
         reference_id: bande._id,
         externe_cle: `bande:${bande._id}:suivi:${new Date(suiviDateIso).getTime()}:aliment`,
@@ -870,7 +870,7 @@ router.put('/:id/evenements-previsionnels/:eventId/terminer', requirePermission(
 
     const events = [...bande.evenementsPrevisionnels];
     const idx = events.findIndex((e) => String(e._id) === String(req.params.eventId));
-    if (idx === -1) return res.status(404).json({ message: 'Événement non trouvé dans ce cycle' });
+    if (idx === -1) return res.status(404).json({ message: 'Événement non trouvé dans cette bande' });
     if (events[idx].statut === 'termine') return res.status(400).json({ message: 'Cet événement est déjà marqué comme terminé' });
 
     const consommationStockId = (req.body.prophylaxieStockId || events[idx].prophylaxieStockId || '').toString().trim();
@@ -960,12 +960,12 @@ router.delete('/:id', requireRole('admin'), requirePermission('bandes.delete'), 
     const row = await getBandeOr404(api, companyId, req.params.id, res);
     if (!row) return undefined;
     if ((row.statut || 'ouverte') !== 'fermee') {
-      return res.status(400).json({ message: 'Seuls les cycles fermés peuvent être supprimés' });
+      return res.status(400).json({ message: 'Seules les bandes fermées peuvent être supprimées' });
     }
 
     const deleted = await api.from('bandes').delete().eq('company_id', companyId).eq('id', req.params.id);
     if (deleted.error) return res.status(500).json({ message: deleted.error.message });
-    return res.json({ message: 'Cycle supprimé' });
+    return res.json({ message: 'Bande supprimée' });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

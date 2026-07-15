@@ -115,7 +115,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Suivi cycle - ${bande.nom}'),
+        title: Text('Suivi bande - ${bande.nom}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.event_note),
@@ -388,7 +388,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
               onPressed: () async {
                 if (widget.bande.id == null || widget.bande.id!.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Cycle introuvable, recharge la liste des cycles')),
+                    const SnackBar(content: Text('Bande introuvable, recharge la liste des bandes')),
                   );
                   return;
                 }
@@ -444,7 +444,7 @@ class _SuiviScreenState extends State<SuiviScreen> {
   Future<void> _terminerEvenement(EvenementPrevisionnel evt) async {
     if (widget.bande.id == null || widget.bande.id!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cycle introuvable, recharge la liste des cycles')),
+        const SnackBar(content: Text('Bande introuvable, recharge la liste des bandes')),
       );
       return;
     }

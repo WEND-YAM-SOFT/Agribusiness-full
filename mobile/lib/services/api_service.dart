@@ -134,59 +134,39 @@ class ApiService {
   static Future<List<dynamic>> getEvenementsSante(String bandeId) async =>
       List<dynamic>.from(_ensureSuccess(await _get('/bandes/$bandeId/sante')) ?? []);
 
-  static Future<List<dynamic>> getEvenementsPrevisionnels(String bandeId) async =>
-      List<dynamic>.from(await _getEvenementsPrevisionnelsWithFallback(bandeId));
-
-  static Future<Map<String, dynamic>> ajouterEvenementPrevisionnel(String bandeId, Map<String, dynamic> data) async =>
-      Map<String, dynamic>.from(await _ajouterEvenementPrevisionnelWithFallback(bandeId, data));
-
-  static Future<Map<String, dynamic>> terminerEvenementPrevisionnel(String bandeId, String eventId, Map<String, dynamic> data) async =>
-            Map<String, dynamic>.from(await _terminerEvenementPrevisionnelWithFallback(bandeId, eventId, data));
-
-    static Future<List<dynamic>> _getEvenementsPrevisionnelsWithFallback(String bandeId) async {
+    static Future<List<dynamic>> getEvenementsPrevisionnels(String bandeId) async {
         if (bandeId.isEmpty) {
-            throw Exception('ID cycle manquant');
+            throw Exception('ID bande manquant');
         }
-
-        final primary = await _get('/bandes/$bandeId/evenements-previsionnels');
-        if (primary.statusCode != 404) {
-            return List<dynamic>.from(_ensureSuccess(primary, endpoint: 'GET /bandes/$bandeId/evenements-previsionnels') ?? []);
-        }
-
-        final fallback = await _get('/cycles/$bandeId/evenements-previsionnels');
-        return List<dynamic>.from(_ensureSuccess(fallback, endpoint: 'GET /cycles/$bandeId/evenements-previsionnels') ?? []);
+        return List<dynamic>.from(_ensureSuccess(
+            await _get('/bandes/$bandeId/evenements-previsionnels'),
+            endpoint: 'GET /bandes/$bandeId/evenements-previsionnels',
+        ) ?? []);
     }
 
-    static Future<Map<String, dynamic>> _ajouterEvenementPrevisionnelWithFallback(String bandeId, Map<String, dynamic> data) async {
+    static Future<Map<String, dynamic>> ajouterEvenementPrevisionnel(String bandeId, Map<String, dynamic> data) async {
         if (bandeId.isEmpty) {
-            throw Exception('ID cycle manquant');
+            throw Exception('ID bande manquant');
         }
-
-        final primary = await _post('/bandes/$bandeId/evenements-previsionnels', body: data);
-        if (primary.statusCode != 404) {
-            return Map<String, dynamic>.from(_ensureSuccess(primary, accepted: const [201], endpoint: 'POST /bandes/$bandeId/evenements-previsionnels'));
-        }
-
-        final fallback = await _post('/cycles/$bandeId/evenements-previsionnels', body: data);
-        return Map<String, dynamic>.from(_ensureSuccess(fallback, accepted: const [201], endpoint: 'POST /cycles/$bandeId/evenements-previsionnels'));
+        return Map<String, dynamic>.from(_ensureSuccess(
+            await _post('/bandes/$bandeId/evenements-previsionnels', body: data),
+            accepted: const [201],
+            endpoint: 'POST /bandes/$bandeId/evenements-previsionnels',
+        ));
     }
 
-    static Future<Map<String, dynamic>> _terminerEvenementPrevisionnelWithFallback(String bandeId, String eventId, Map<String, dynamic> data) async {
-        if (bandeId.isEmpty) {
-            throw Exception('ID cycle manquant');
-        }
-        if (eventId.isEmpty) {
-            throw Exception('ID événement manquant');
-        }
-
-        final primary = await _put('/bandes/$bandeId/evenements-previsionnels/$eventId/terminer', body: data);
-        if (primary.statusCode != 404) {
-            return Map<String, dynamic>.from(_ensureSuccess(primary, endpoint: 'PUT /bandes/$bandeId/evenements-previsionnels/$eventId/terminer'));
-        }
-
-        final fallback = await _put('/cycles/$bandeId/evenements-previsionnels/$eventId/terminer', body: data);
-        return Map<String, dynamic>.from(_ensureSuccess(fallback, endpoint: 'PUT /cycles/$bandeId/evenements-previsionnels/$eventId/terminer'));
+  static Future<Map<String, dynamic>> terminerEvenementPrevisionnel(String bandeId, String eventId, Map<String, dynamic> data) async {
+    if (bandeId.isEmpty) {
+      throw Exception('ID bande manquant');
     }
+    if (eventId.isEmpty) {
+      throw Exception('ID événement manquant');
+    }
+    return Map<String, dynamic>.from(_ensureSuccess(
+      await _put('/bandes/$bandeId/evenements-previsionnels/$eventId/terminer', body: data),
+      endpoint: 'PUT /bandes/$bandeId/evenements-previsionnels/$eventId/terminer',
+    ));
+  }
 
   // STOCKS
   static Future<List<dynamic>> getStocks() async =>

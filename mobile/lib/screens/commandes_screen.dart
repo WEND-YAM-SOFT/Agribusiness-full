@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../providers/commandes_provider.dart';
 import '../providers/clients_provider.dart';
 import '../models/commande.dart';
+import '../services/api_service.dart';
 import '../utils/money_format.dart';
 import '../widgets/iso_calendar_picker.dart';
 import '../widgets/international_phone_field.dart';
@@ -89,7 +90,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search),
                   labelText: 'Rechercher une commande',
-                  hintText: 'Client, cycle, produit, montant, note...',
+                  hintText: 'Client, bande, produit, montant, note...',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -406,8 +407,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
               final qte = int.tryParse(produitQteController.text) ?? 0;
               final prix = _parseDecimal(produitPrixController.text);
               Navigator.pop(ctx);
-              // Sélectionner un client avant de créer la commande
-              _selectClientPourCommande(
+              _selectBandePuisClientPourCommande(
                 produitNomController.text,
                 qte,
                 prix,
@@ -418,6 +418,68 @@ class _CommandesScreenState extends State<CommandesScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _selectBandePuisClientPourCommande(String produitNom, int quantite, double prix) async {
+    List<Map<String, dynamic>> bandesActives = const [];
+    try {
+      final rawBandes = await ApiService.getBandesActives();
+      bandesActives = rawBandes
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    } catch (_) {
+      bandesActives = const [];
+    }
+
+    if (!mounted) return;
+
+    if (bandesActives.isEmpty) {
+      _selectClientPourCommande(produitNom, quantite, prix, null);
+      return;
+    }
+
+    String selectedBandeId = '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Sélectionner une bande'),
+          content: DropdownButtonFormField<String>(
+            initialValue: selectedBandeId,
+            decoration: const InputDecoration(labelText: 'Bande (optionnelle)'),
+            items: [
+              const DropdownMenuItem<String>(
+                value: '',
+                child: Text('Sans bande'),
+              ),
+              ...bandesActives.map((b) {
+                final id = (b['id'] ?? b['_id'] ?? '').toString();
+                final nom = (b['nom'] ?? 'Bande').toString();
+                final batiment = (b['batiment'] ?? '').toString();
+                final label = batiment.isNotEmpty ? '$nom - $batiment' : nom;
+                return DropdownMenuItem<String>(
+                  value: id,
+                  child: Text(label),
+                );
+              }),
+            ],
+            onChanged: (value) {
+              setDialogState(() {
+                selectedBandeId = value ?? '';
+              });
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Annuler')),
+            ElevatedButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Suivant')),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+    _selectClientPourCommande(produitNom, quantite, prix, selectedBandeId.isEmpty ? null : selectedBandeId);
   }
 
   Future<void> _showEffacerHistoriqueCommandesDialog() async {
@@ -446,7 +508,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
     );
   }
 
-  void _selectClientPourCommande(String produitNom, int quantite, double prix) {
+  void _selectClientPourCommande(String produitNom, int quantite, double prix, String? bandeId) {
     context.read<ClientsProvider>().chargerClients();
 
     showDialog(
@@ -475,6 +537,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                       final montant = quantite * prix;
                       final ok = await context.read<CommandesProvider>().creerCommande({
                         'clientId': client.id,
+                        if (bandeId != null && bandeId.isNotEmpty) 'bandeId': bandeId,
                         'produits': [
                           {'nom': produitNom, 'quantite': quantite, 'prixUnitaire': prix}
                         ],
@@ -502,6 +565,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 final montant = quantite * prix;
                 final ok = await context.read<CommandesProvider>().creerCommande({
                   'clientId': newClientId,
+                  if (bandeId != null && bandeId.isNotEmpty) 'bandeId': bandeId,
                   'produits': [
                     {'nom': produitNom, 'quantite': quantite, 'prixUnitaire': prix}
                   ],

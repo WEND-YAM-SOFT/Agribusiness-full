@@ -26,7 +26,6 @@ const financeRoutes = require('./routes/finance');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/bandes', authenticate, bandesRoutes);
-app.use('/api/cycles', authenticate, bandesRoutes);
 app.use('/api/clients', authenticate, clientsRoutes);
 app.use('/api/commandes', authenticate, commandesRoutes);
 app.use('/api/stocks', authenticate, stocksRoutes);

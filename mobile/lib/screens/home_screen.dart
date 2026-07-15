@@ -46,8 +46,8 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     _ModuleItem(
       page: BandesScreen(),
-      desktopDestination: NavigationDestination(icon: Icon(Icons.egg_outlined), selectedIcon: Icon(Icons.egg), label: 'Cycles'),
-      mobileDestination: NavigationDestination(icon: Icon(Icons.egg_outlined), selectedIcon: Icon(Icons.egg), label: 'Cycles'),
+      desktopDestination: NavigationDestination(icon: Icon(Icons.egg_outlined), selectedIcon: Icon(Icons.egg), label: 'Bandes'),
+      mobileDestination: NavigationDestination(icon: Icon(Icons.egg_outlined), selectedIcon: Icon(Icons.egg), label: 'Bandes'),
       permission: 'bandes:view',
     ),
     _ModuleItem(

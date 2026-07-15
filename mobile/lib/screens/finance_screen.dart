@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/finance_provider.dart';
+import '../services/api_service.dart';
 import '../utils/money_format.dart';
 import '../widgets/iso_calendar_picker.dart';
 
@@ -367,7 +368,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     );
   }
 
-  void _showAjouterDepenseDialog() {
+  Future<void> _showAjouterDepenseDialog() async {
     final quiNomCtrl = TextEditingController();
     final quiPrenomCtrl = TextEditingController();
     final categorieCtrl = TextEditingController();
@@ -375,6 +376,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final montantCtrl = TextEditingController();
     final commentaireCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
+    String selectedBandeId = '';
+
+    List<Map<String, dynamic>> bandesActives = const [];
+    try {
+      final rawBandes = await ApiService.getBandesActives();
+      bandesActives = rawBandes
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    } catch (_) {
+      bandesActives = const [];
+    }
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -389,6 +404,31 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 TextField(controller: quiNomCtrl, decoration: const InputDecoration(labelText: 'Nom *')),
                 TextField(controller: categorieCtrl, decoration: const InputDecoration(labelText: 'Categorie *')),
                 TextField(controller: typeCtrl, decoration: const InputDecoration(labelText: 'Type *')),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedBandeId,
+                  decoration: const InputDecoration(labelText: 'Bande (optionnelle)'),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: '',
+                      child: Text('Sans bande'),
+                    ),
+                    ...bandesActives.map((b) {
+                      final id = (b['id'] ?? b['_id'] ?? '').toString();
+                      final nom = (b['nom'] ?? 'Bande').toString();
+                      final batiment = (b['batiment'] ?? '').toString();
+                      final label = batiment.isNotEmpty ? '$nom - $batiment' : nom;
+                      return DropdownMenuItem<String>(
+                        value: id,
+                        child: Text(label),
+                      );
+                    }),
+                  ],
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedBandeId = value ?? '';
+                    });
+                  },
+                ),
                 TextField(controller: montantCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Montant *')),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -434,6 +474,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   'montant': montant,
                   'date': selectedDate.toIso8601String(),
                   'commentaire': commentaireCtrl.text.trim(),
+                  if (selectedBandeId.isNotEmpty) 'bandeId': selectedBandeId,
                 });
                 if (!mounted) return;
                 navigator.pop();

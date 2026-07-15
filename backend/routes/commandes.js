@@ -14,8 +14,19 @@ function isCommandeHistorique(row) {
 
 function extractMissingColumn(error) {
   const message = (error?.message || '').toString();
-  const match = message.match(/Could not find the '([^']+)' column/i);
-  return match?.[1] || '';
+  const patterns = [
+    /Could not find the '([^']+)' column/i,
+    /column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i,
+    /column\s+[a-zA-Z0-9_]+\."?([a-zA-Z0-9_]+)"?\s+does not exist/i,
+    /could not find column\s+"?([a-zA-Z0-9_]+)"?/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+
+  return '';
 }
 
 function toLegacyTresoreriePayload(payload) {

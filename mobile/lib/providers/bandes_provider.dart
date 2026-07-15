@@ -67,7 +67,7 @@ class BandesProvider with ChangeNotifier {
   Future<bool> supprimerBande(String id) async {
     _lastError = null;
     if (id.isEmpty) {
-      _lastError = 'ID cycle manquant';
+      _lastError = 'ID bande manquant';
       return false;
     }
     try {
@@ -140,7 +140,7 @@ class BandesProvider with ChangeNotifier {
   Future<bool> ajouterEvenementPrevisionnel(String bandeId, Map<String, dynamic> data) async {
     _lastError = null;
     if (bandeId.isEmpty) {
-      _lastError = 'ID cycle manquant';
+      _lastError = 'ID bande manquant';
       return false;
     }
     try {
@@ -164,7 +164,7 @@ class BandesProvider with ChangeNotifier {
   }) async {
     _lastError = null;
     if (bandeId.isEmpty || eventId.isEmpty) {
-      _lastError = 'ID cycle ou événement manquant';
+      _lastError = 'ID bande ou événement manquant';
       return false;
     }
     try {

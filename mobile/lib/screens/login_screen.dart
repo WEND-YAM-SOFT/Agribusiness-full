@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
   String? _error;
+  bool _obscurePassword = true;
 
   @override
   Widget build(BuildContext context) {
@@ -64,16 +65,27 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: 'Email',
                           prefixIcon: Icon(Icons.alternate_email),
                         ),
+                        onChanged: (_) {
+                          if (_error != null) setState(() => _error = null);
+                        },
                         validator: (v) => (v == null || v.trim().isEmpty) ? 'Email requis' : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _passwordCtrl,
-                        obscureText: true,
-                        decoration: const InputDecoration(
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
                           labelText: 'Mot de passe',
-                          prefixIcon: Icon(Icons.lock_outline),
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            tooltip: _obscurePassword ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                            icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
                         ),
+                        onChanged: (_) {
+                          if (_error != null) setState(() => _error = null);
+                        },
                         validator: (v) => (v == null || v.isEmpty) ? 'Mot de passe requis' : null,
                       ),
                       const SizedBox(height: 8),
@@ -106,6 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    setState(() => _error = null);
+
     final auth = context.read<AuthProvider>();
     final ok = await auth.login(
           _emailCtrl.text.trim(),
@@ -113,10 +127,26 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
     if (!ok && mounted) {
-      setState(() => _error = auth.lastError?.isNotEmpty == true
-          ? auth.lastError
-          : 'Identifiants incorrects ou compte inactif');
+      setState(() => _error = _formatLoginError(auth.lastError));
     }
+  }
+
+  String _formatLoginError(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) return 'Connexion impossible. Vérifie email et mot de passe.';
+
+    final lower = value.toLowerCase();
+    if (lower.contains('incorrect') || lower.contains('invalid login credentials')) {
+      return 'Email ou mot de passe incorrect.';
+    }
+    if (lower.contains('désactiv') || lower.contains('inactive') || lower.contains('compte')) {
+      return 'Le compte est désactivé. Contacte un administrateur.';
+    }
+    if (lower.contains('token') || lower.contains('expir')) {
+      return 'Session invalide ou expirée. Réessaie.';
+    }
+
+    return value;
   }
 
   void _showForgotPasswordDialog() {
