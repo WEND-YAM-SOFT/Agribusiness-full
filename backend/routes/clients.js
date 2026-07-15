@@ -63,6 +63,40 @@ async function insertClientCompat(client, payload) {
   };
 }
 
+async function updateClientCompat(client, companyId, clientId, updates) {
+  let candidate = { ...updates };
+  let lastMissingColumn = '';
+
+  for (let i = 0; i < 15; i += 1) {
+    const result = await client
+      .from('clients')
+      .update(candidate)
+      .eq('company_id', companyId)
+      .eq('id', clientId)
+      .select('*')
+      .single();
+
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (!missingColumn) return result;
+    lastMissingColumn = missingColumn;
+
+    if (!Object.prototype.hasOwnProperty.call(candidate, missingColumn)) {
+      return result;
+    }
+
+    delete candidate[missingColumn];
+  }
+
+  return {
+    data: null,
+    error: {
+      message: `Modification client impossible: schema incompatible apres tentatives de fallback (derniere colonne: ${lastMissingColumn || 'inconnue'})`,
+    },
+  };
+}
+
 function mapClientRow(row) {
   const adresse = pickFirstNonEmpty(row.adresse, row.address);
   const commentaireActivite = pickFirstNonEmpty(
@@ -351,13 +385,7 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       updates.type_client = req.body.typeClient;
     }
 
-    const saved = await client
-      .from('clients')
-      .update(updates)
-      .eq('company_id', companyId)
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const saved = await updateClientCompat(client, companyId, req.params.id, updates);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     return res.json(mapClientRow(saved.data));
