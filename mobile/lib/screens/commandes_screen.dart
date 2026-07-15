@@ -605,6 +605,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
     final email = TextEditingController();
     final adresse = TextEditingController();
     final activite = TextEditingController();
+    final entreprise = TextEditingController();
     String typeClient = 'particulier';
     String? createdClientId;
 
@@ -636,6 +637,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                   decoration: const InputDecoration(labelText: 'Activité / commentaire *'),
                   maxLines: 2,
                 ),
+                TextField(controller: entreprise, decoration: const InputDecoration(labelText: 'Entreprise')),
               ],
             ),
           ),
@@ -668,6 +670,7 @@ class _CommandesScreenState extends State<CommandesScreen> {
                   'adresse': adresse.text.trim(),
                   'typeClient': typeClient,
                   'commentaireActivite': activite.text.trim(),
+                  if (entreprise.text.trim().isNotEmpty) 'entreprise': entreprise.text.trim(),
                   'statut': 'prospect',
                 });
                 final ok = newClientId != null && newClientId.isNotEmpty;

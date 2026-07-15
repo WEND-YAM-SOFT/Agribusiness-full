@@ -26,6 +26,18 @@ function extractMissingColumn(error) {
   return match?.[1] || '';
 }
 
+function str(value) {
+  return (value ?? '').toString().trim();
+}
+
+function pickFirstNonEmpty(...values) {
+  for (const value of values) {
+    const candidate = str(value);
+    if (candidate) return candidate;
+  }
+  return '';
+}
+
 async function insertClientCompat(client, payload) {
   let candidate = { ...payload };
   let lastMissingColumn = '';
@@ -52,16 +64,28 @@ async function insertClientCompat(client, payload) {
 }
 
 function mapClientRow(row) {
+  const adresse = pickFirstNonEmpty(row.adresse, row.address);
+  const commentaireActivite = pickFirstNonEmpty(
+    row.commentaire_activite,
+    row.commentaireActivite,
+    row.activite_entreprise,
+    row.activiteEntreprise,
+    row.activite,
+    row.activity_comment,
+    row.company_activity,
+  );
+  const entreprise = pickFirstNonEmpty(row.entreprise, row.company, row.societe, row.societe_nom);
+
   return {
     _id: row.id,
     nom: row.nom,
     prenom: row.prenom || '',
     telephone: row.telephone || '',
     email: row.email || '',
-    adresse: row.adresse || row.address || '',
+    adresse,
     typeClient: row.type_client || row.typeClient || 'particulier',
-    commentaireActivite: row.commentaire_activite || row.commentaireActivite || '',
-    entreprise: row.entreprise || row.company || '',
+    commentaireActivite,
+    entreprise,
     notes: row.notes || '',
     statut: row.statut || row.status || 'prospect',
     createdAt: row.created_at || row.createdAt,
@@ -95,8 +119,16 @@ router.get('/', requirePermission('clients.read'), async (req, res) => {
           row.prenom,
           row.telephone,
           row.entreprise,
+          row.company,
           row.adresse,
+          row.address,
           row.commentaire_activite,
+          row.commentaireActivite,
+          row.activite_entreprise,
+          row.activiteEntreprise,
+          row.activite,
+          row.activity_comment,
+          row.company_activity,
         ];
         return fields.some((v) => (v || '').toString().toLowerCase().includes(q));
       });
@@ -128,8 +160,16 @@ router.get('/recherche', requirePermission('clients.read'), async (req, res) => 
         row.prenom,
         row.telephone,
         row.entreprise,
+        row.company,
         row.adresse,
+        row.address,
         row.commentaire_activite,
+        row.commentaireActivite,
+        row.activite_entreprise,
+        row.activiteEntreprise,
+        row.activite,
+        row.activity_comment,
+        row.company_activity,
       ];
       return fields.some((v) => (v || '').toString().toLowerCase().includes(q));
     });
@@ -163,17 +203,26 @@ router.get('/:id', requirePermission('clients.read'), async (req, res) => {
 
 router.post('/', requirePermission('clients.create'), async (req, res) => {
   try {
-    const nom = (req.body.nom || '').toString().trim();
-    const prenom = (req.body.prenom || '').toString().trim();
+    const nom = str(req.body.nom);
+    const prenom = str(req.body.prenom);
     const telephone = normalizeInternationalPhone(req.body.telephone || '');
     if (!nom || !prenom || !telephone) {
       return res.status(400).json({ message: 'Les champs obligatoires client sont: nom, prenom, telephone' });
     }
 
-    const adresse = (req.body.adresse || '').toString().trim() || 'Non renseignée';
+    const adresse = pickFirstNonEmpty(req.body.adresse, req.body.address);
     const rawTypeClient = (req.body.typeClient || req.body.type_client || '').toString().trim().toLowerCase();
     const typeClient = rawTypeClient === 'professionnel' ? 'pro' : (rawTypeClient || 'particulier');
-    const commentaireActivite = (req.body.commentaireActivite || req.body.commentaire_activite || '').toString().trim() || 'RAS';
+    const commentaireActivite = pickFirstNonEmpty(
+      req.body.commentaireActivite,
+      req.body.commentaire_activite,
+      req.body.activiteEntreprise,
+      req.body.activite_entreprise,
+      req.body.activite,
+      req.body.activityComment,
+      req.body.companyActivity,
+    );
+    const entreprise = pickFirstNonEmpty(req.body.entreprise, req.body.company, req.body.societe);
 
     if (!['pro', 'particulier'].includes(typeClient)) {
       return res.status(400).json({ message: 'typeClient invalide (pro ou particulier)' });
@@ -187,16 +236,32 @@ router.post('/', requirePermission('clients.create'), async (req, res) => {
       nom,
       prenom,
       telephone,
-      email: req.body.email || '',
-      adresse,
+      email: str(req.body.email),
       type_client: typeClient,
-      commentaire_activite: commentaireActivite,
-      entreprise: req.body.entreprise || '',
-      statut: req.body.statut || 'prospect',
-      notes: req.body.notes || '',
+      statut: str(req.body.statut) || 'prospect',
+      notes: str(req.body.notes),
       dernier_contact_le: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
+    if (adresse) {
+      payload.adresse = adresse;
+      payload.address = adresse;
+    }
+    if (commentaireActivite) {
+      payload.commentaire_activite = commentaireActivite;
+      payload.commentaireActivite = commentaireActivite;
+      payload.activite_entreprise = commentaireActivite;
+      payload.activiteEntreprise = commentaireActivite;
+      payload.activite = commentaireActivite;
+      payload.activity_comment = commentaireActivite;
+      payload.company_activity = commentaireActivite;
+    }
+    if (entreprise) {
+      payload.entreprise = entreprise;
+      payload.company = entreprise;
+      payload.societe = entreprise;
+    }
 
     const { data, error } = await insertClientCompat(client, payload);
     if (error) return res.status(400).json({ message: error.message });
@@ -238,20 +303,48 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       updates.telephone = telephone;
     }
     if (req.body.email !== undefined) updates.email = req.body.email;
-    if (req.body.entreprise !== undefined) updates.entreprise = req.body.entreprise;
+    if (req.body.entreprise !== undefined || req.body.company !== undefined || req.body.societe !== undefined) {
+      const entreprise = pickFirstNonEmpty(req.body.entreprise, req.body.company, req.body.societe);
+      updates.entreprise = entreprise;
+      updates.company = entreprise;
+      updates.societe = entreprise;
+    }
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
     if (req.body.statut !== undefined) updates.statut = req.body.statut;
 
-    if (req.body.adresse !== undefined) {
-      const adresse = req.body.adresse.toString().trim();
+    if (req.body.adresse !== undefined || req.body.address !== undefined) {
+      const adresse = pickFirstNonEmpty(req.body.adresse, req.body.address);
       if (!adresse) return res.status(400).json({ message: 'Adresse obligatoire' });
       updates.adresse = adresse;
+      updates.address = adresse;
     }
 
-    if (req.body.commentaireActivite !== undefined) {
-      const commentaire = req.body.commentaireActivite.toString().trim();
+    if (
+      req.body.commentaireActivite !== undefined ||
+      req.body.commentaire_activite !== undefined ||
+      req.body.activiteEntreprise !== undefined ||
+      req.body.activite_entreprise !== undefined ||
+      req.body.activite !== undefined ||
+      req.body.activityComment !== undefined ||
+      req.body.companyActivity !== undefined
+    ) {
+      const commentaire = pickFirstNonEmpty(
+        req.body.commentaireActivite,
+        req.body.commentaire_activite,
+        req.body.activiteEntreprise,
+        req.body.activite_entreprise,
+        req.body.activite,
+        req.body.activityComment,
+        req.body.companyActivity,
+      );
       if (!commentaire) return res.status(400).json({ message: 'Commentaire activité obligatoire' });
       updates.commentaire_activite = commentaire;
+      updates.commentaireActivite = commentaire;
+      updates.activite_entreprise = commentaire;
+      updates.activiteEntreprise = commentaire;
+      updates.activite = commentaire;
+      updates.activity_comment = commentaire;
+      updates.company_activity = commentaire;
     }
 
     if (req.body.typeClient !== undefined) {
