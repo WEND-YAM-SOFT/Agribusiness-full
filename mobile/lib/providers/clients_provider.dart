@@ -139,6 +139,17 @@ class ClientsProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> supprimerClient(String id) async {
+    try {
+      await ApiService.supprimerClient(id);
+      await appliquerRecherchePersistante();
+      return true;
+    } catch (e) {
+      debugPrint('Erreur: $e');
+      return false;
+    }
+  }
+
   Future<void> _restaurerFiltres() async {
     final prefs = await SharedPreferences.getInstance();
     _searchQuery = prefs.getString('clients.searchQuery') ?? '';

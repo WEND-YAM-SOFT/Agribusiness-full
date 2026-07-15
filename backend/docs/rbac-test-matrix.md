@@ -15,7 +15,7 @@ Expected status: 200/201 for allowed, 403 for forbidden.
 | GET /api/clients | clients.read | Allow | Allow | Allow | Allow |
 | POST /api/clients | clients.create | Allow | Allow | Allow | Deny |
 | PUT /api/clients/:id | clients.update | Allow | Allow | Allow | Deny |
-| DELETE /api/clients/:id | clients.delete | Allow | Deny | Deny | Deny |
+| DELETE /api/clients/:id | clients.delete | Allow | Allow | Deny | Deny |
 
 ## Commandes
 | Endpoint | Permission | admin | gestionnaire_ferme | commercial | technicien |

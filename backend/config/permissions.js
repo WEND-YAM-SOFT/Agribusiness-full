@@ -23,7 +23,7 @@ const ROLE_ALIASES = {
 const DEFAULT_ROLE_PERMISSIONS = {
   admin: ['*'],
   gestionnaire_ferme: [
-    'clients.read', 'clients.create', 'clients.update',
+    'clients.read', 'clients.create', 'clients.update', 'clients.delete',
     'commandes.read', 'commandes.create', 'commandes.update', 'commandes.delete',
     'commandes.comment', 'commandes.historique.read',
     'commandes.livraison.create', 'commandes.livraison.update',

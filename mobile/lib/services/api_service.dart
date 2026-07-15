@@ -257,6 +257,10 @@ class ApiService {
   static Future<Map<String, dynamic>> mettreAJourClient(String id, Map<String, dynamic> data) async =>
       Map<String, dynamic>.from(_ensureSuccess(await _put('/clients/$id', body: data)));
 
+    static Future<void> supprimerClient(String id) async {
+        _ensureSuccess(await _delete('/clients/$id'));
+    }
+
   // COMMANDES
   static Future<List<dynamic>> getCommandes() async =>
       List<dynamic>.from(_ensureSuccess(await _get('/commandes')) ?? []);

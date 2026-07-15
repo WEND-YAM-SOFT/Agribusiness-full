@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/clients_provider.dart';
 import '../models/client.dart';
 import '../widgets/international_phone_field.dart';
@@ -102,6 +103,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   Widget _buildClientTile(Client client) {
+    final auth = context.watch<AuthProvider>();
+    final role = (auth.user?['role'] ?? '').toString();
+    final canDeleteClient = auth.hasPermission('clients.delete') || role == 'gestionnaire_ferme';
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
@@ -122,10 +126,16 @@ class _ClientsScreenState extends State<ClientsScreen> {
           ],
         ),
         trailing: SizedBox(
-          width: 90,
+          width: canDeleteClient ? 130 : 90,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              if (canDeleteClient)
+                IconButton(
+                  tooltip: 'Supprimer client',
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  onPressed: () => _confirmDeleteClient(client),
+                ),
               IconButton(
                 tooltip: 'Modifier client',
                 icon: const Icon(Icons.edit),
@@ -141,6 +151,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   void _showClientDetails(Client client) {
+    final auth = context.read<AuthProvider>();
+    final role = (auth.user?['role'] ?? '').toString();
+    final canDeleteClient = auth.hasPermission('clients.delete') || role == 'gestionnaire_ferme';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -192,10 +205,59 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   label: const Text('Modifier le client'),
                 ),
               ),
+              if (canDeleteClient) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _confirmDeleteClient(client);
+                    },
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    label: const Text('Supprimer le client', style: TextStyle(color: Colors.redAccent)),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _confirmDeleteClient(Client client) async {
+    final clientId = client.id;
+    if (clientId == null || clientId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Client invalide, recharge la liste puis réessaie')),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer client'),
+        content: Text('Supprimer "${client.nomComplet}" ? Cette action est irréversible.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final ok = await context.read<ClientsProvider>().supprimerClient(clientId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Client supprimé' : 'Suppression impossible')),
     );
   }
 
