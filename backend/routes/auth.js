@@ -30,6 +30,122 @@ function signToken(user) {
   );
 }
 
+function extractMissingColumn(error) {
+  const message = (error?.message || '').toString();
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || '';
+}
+
+function isRoleConstraintError(error) {
+  const message = (error?.message || '').toString().toLowerCase();
+  return message.includes('violates check constraint')
+    && message.includes('profile')
+    && message.includes('role');
+}
+
+function toLegacySqlRole(role) {
+  const normalized = mapRole(role);
+  return normalized === 'admin' ? 'admin' : 'agent';
+}
+
+async function upsertProfileCompat(client, payload) {
+  let candidate = { ...payload };
+
+  for (let i = 0; i < 3; i += 1) {
+    const result = await client.from('profiles').upsert(candidate);
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (missingColumn === 'permissions' && Object.prototype.hasOwnProperty.call(candidate, 'permissions')) {
+      const fallbackPayload = { ...candidate };
+      delete fallbackPayload.permissions;
+      candidate = fallbackPayload;
+      continue;
+    }
+
+    if (isRoleConstraintError(result.error) && candidate.role) {
+      const fallbackRole = toLegacySqlRole(candidate.role);
+      if (candidate.role !== fallbackRole) {
+        candidate = { ...candidate, role: fallbackRole };
+        continue;
+      }
+    }
+
+    return result;
+  }
+
+  return { data: null, error: { message: 'Upsert profile impossible après tentatives de compatibilité' } };
+}
+
+async function insertProfileCompat(client, payload) {
+  let candidate = { ...payload };
+
+  for (let i = 0; i < 3; i += 1) {
+    const result = await client
+      .from('profiles')
+      .insert(candidate)
+      .select('*')
+      .single();
+
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (missingColumn === 'permissions' && Object.prototype.hasOwnProperty.call(candidate, 'permissions')) {
+      const fallbackPayload = { ...candidate };
+      delete fallbackPayload.permissions;
+      candidate = fallbackPayload;
+      continue;
+    }
+
+    if (isRoleConstraintError(result.error) && candidate.role) {
+      const fallbackRole = toLegacySqlRole(candidate.role);
+      if (candidate.role !== fallbackRole) {
+        candidate = { ...candidate, role: fallbackRole };
+        continue;
+      }
+    }
+
+    return result;
+  }
+
+  return { data: null, error: { message: 'Insertion profile impossible après tentatives de compatibilité' } };
+}
+
+async function updateProfileCompat(client, userId, payload) {
+  let candidate = { ...payload };
+
+  for (let i = 0; i < 3; i += 1) {
+    const result = await client
+      .from('profiles')
+      .update(candidate)
+      .eq('id', userId)
+      .select('*')
+      .single();
+
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (missingColumn === 'permissions' && Object.prototype.hasOwnProperty.call(candidate, 'permissions')) {
+      const fallbackPayload = { ...candidate };
+      delete fallbackPayload.permissions;
+      candidate = fallbackPayload;
+      continue;
+    }
+
+    if (isRoleConstraintError(result.error) && candidate.role) {
+      const fallbackRole = toLegacySqlRole(candidate.role);
+      if (candidate.role !== fallbackRole) {
+        candidate = { ...candidate, role: fallbackRole };
+        continue;
+      }
+    }
+
+    return result;
+  }
+
+  return { data: null, error: { message: 'Mise à jour profile impossible après tentatives de compatibilité' } };
+}
+
 async function getOrCreateDefaultCompanyId(client) {
   const { data: existing, error: readError } = await client
     .from('entreprises')
@@ -96,13 +212,13 @@ async function ensureInitialAdmin() {
     userId = created.data.user.id;
   }
 
-  const { error: profileError } = await client.from('profiles').upsert({
+  const profileUpsert = await upsertProfileCompat(client, {
     id: userId,
     company_id: companyId,
     role: 'admin',
     full_name: 'Administrateur Principal',
   });
-  if (profileError) throw new Error(profileError.message);
+  if (profileUpsert.error) throw new Error(profileUpsert.error.message);
 }
 
 async function buildPublicUser(client, authUser, profile) {
@@ -161,14 +277,14 @@ router.post('/inscription', authenticate, requirePermission('users.manage'), asy
 
     const role = mapRole(req.body.role);
     const fullName = mergeFullName(req.body.nom || '', req.body.prenom || '');
-    const { error: profileError } = await client.from('profiles').upsert({
+    const profileUpsert = await upsertProfileCompat(client, {
       id: created.data.user.id,
       company_id: companyId,
       role,
       full_name: fullName || email,
     });
-    if (profileError) {
-      return res.status(400).json({ message: profileError.message });
+    if (profileUpsert.error) {
+      return res.status(400).json({ message: profileUpsert.error.message });
     }
 
     const publicUser = await buildPublicUser(client, created.data.user, {
@@ -209,16 +325,12 @@ router.post('/connexion', async (req, res) => {
         login.data.user.user_metadata?.nom || '',
         login.data.user.user_metadata?.prenom || ''
       );
-      const inserted = await client
-        .from('profiles')
-        .insert({
-          id: login.data.user.id,
-          company_id: companyId,
-          role: 'technicien',
-          full_name: fullName || email,
-        })
-        .select('*')
-        .single();
+      const inserted = await insertProfileCompat(client, {
+        id: login.data.user.id,
+        company_id: companyId,
+        role: 'technicien',
+        full_name: fullName || email,
+      });
 
       if (inserted.error) {
         return res.status(400).json({ message: inserted.error.message });
@@ -230,12 +342,10 @@ router.post('/connexion', async (req, res) => {
     if (!profile.company_id) {
       const companyId = await getOrCreateDefaultCompanyId(client);
       const normalizedRole = mapRole(profile.role);
-      const patched = await client
-        .from('profiles')
-        .update({ company_id: companyId, role: normalizedRole })
-        .eq('id', login.data.user.id)
-        .select('*')
-        .single();
+      const patched = await updateProfileCompat(client, login.data.user.id, {
+        company_id: companyId,
+        role: normalizedRole,
+      });
 
       if (patched.error) {
         return res.status(400).json({ message: patched.error.message });

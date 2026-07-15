@@ -37,41 +37,80 @@ function extractMissingColumn(error) {
   return match?.[1] || '';
 }
 
-async function insertProfileCompat(client, payload) {
-  const firstTry = await client.from('profiles').insert(payload).select('*').single();
-  if (!firstTry.error) return firstTry;
+function isRoleConstraintError(error) {
+  const message = (error?.message || '').toString().toLowerCase();
+  return message.includes('violates check constraint')
+    && message.includes('profile')
+    && message.includes('role');
+}
 
-  if (extractMissingColumn(firstTry.error) === 'permissions') {
-    const fallbackPayload = { ...payload };
-    delete fallbackPayload.permissions;
-    return client.from('profiles').insert(fallbackPayload).select('*').single();
+function toLegacySqlRole(role) {
+  const normalized = mapRole(role);
+  return normalized === 'admin' ? 'admin' : 'agent';
+}
+
+async function insertProfileCompat(client, payload) {
+  let candidate = { ...payload };
+
+  for (let i = 0; i < 3; i += 1) {
+    const result = await client.from('profiles').insert(candidate).select('*').single();
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (missingColumn === 'permissions' && Object.prototype.hasOwnProperty.call(candidate, 'permissions')) {
+      const fallbackPayload = { ...candidate };
+      delete fallbackPayload.permissions;
+      candidate = fallbackPayload;
+      continue;
+    }
+
+    if (isRoleConstraintError(result.error) && candidate.role) {
+      const fallbackRole = toLegacySqlRole(candidate.role);
+      if (candidate.role !== fallbackRole) {
+        candidate = { ...candidate, role: fallbackRole };
+        continue;
+      }
+    }
+
+    return result;
   }
 
-  return firstTry;
+  return { data: null, error: { message: 'Insertion profile impossible après tentatives de compatibilité' } };
 }
 
 async function updateProfileCompat(client, userId, payload) {
-  const firstTry = await client
-    .from('profiles')
-    .update(payload)
-    .eq('id', userId)
-    .select('*')
-    .single();
+  let candidate = { ...payload };
 
-  if (!firstTry.error) return firstTry;
-
-  if (extractMissingColumn(firstTry.error) === 'permissions') {
-    const fallbackPayload = { ...payload };
-    delete fallbackPayload.permissions;
-    return client
+  for (let i = 0; i < 3; i += 1) {
+    const result = await client
       .from('profiles')
-      .update(fallbackPayload)
+      .update(candidate)
       .eq('id', userId)
       .select('*')
       .single();
+
+    if (!result.error) return result;
+
+    const missingColumn = extractMissingColumn(result.error);
+    if (missingColumn === 'permissions' && Object.prototype.hasOwnProperty.call(candidate, 'permissions')) {
+      const fallbackPayload = { ...candidate };
+      delete fallbackPayload.permissions;
+      candidate = fallbackPayload;
+      continue;
+    }
+
+    if (isRoleConstraintError(result.error) && candidate.role) {
+      const fallbackRole = toLegacySqlRole(candidate.role);
+      if (candidate.role !== fallbackRole) {
+        candidate = { ...candidate, role: fallbackRole };
+        continue;
+      }
+    }
+
+    return result;
   }
 
-  return firstTry;
+  return { data: null, error: { message: 'Mise à jour profile impossible après tentatives de compatibilité' } };
 }
 
 function normalizeInternationalPhone(value) {
