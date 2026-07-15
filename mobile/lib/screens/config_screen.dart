@@ -443,10 +443,22 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                       itemCount: admin.auditLogs.length,
                       itemBuilder: (_, i) {
                         final log = admin.auditLogs[i];
+                        final action = (log['action'] ?? '').toString();
+                        final targetType = (log['targetType'] ?? log['target_type'] ?? '').toString();
+                        final targetId = (log['targetId'] ?? log['target_id'] ?? '').toString();
+                        final actor = (log['actor'] ?? log['userEmail'] ?? log['user_email'] ?? log['userId'] ?? log['user_id'] ?? 'Système').toString();
+                        final createdAtRaw = (log['createdAt'] ?? log['created_at'] ?? '').toString();
+                        final createdAt = DateTime.tryParse(createdAtRaw);
+                        final when = createdAt == null
+                            ? createdAtRaw
+                            : '${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')}/${createdAt.year} ${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}';
+                        final targetLabel = targetType.isEmpty
+                            ? action
+                            : (targetId.isEmpty ? '$action • $targetType' : '$action • $targetType ($targetId)');
                         return ListTile(
                           leading: const Icon(Icons.history),
-                          title: Text((log['action'] ?? '').toString()),
-                          subtitle: Text('${log['userEmail'] ?? ''} • ${log['createdAt'] ?? ''}'),
+                          title: Text(targetLabel),
+                          subtitle: Text('$actor • $when'),
                         );
                       },
                     ),

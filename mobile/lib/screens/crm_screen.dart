@@ -112,15 +112,21 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
               child: Row(
                 children: [
                   Expanded(
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _filterButton('Tous', null),
-                        _filterButton('Prospects', 'prospect'),
-                        _filterButton('Actifs', 'actif'),
-                        _filterButton('Inactifs', 'inactif'),
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: provider.crmStatutFilter,
+                      decoration: const InputDecoration(
+                        labelText: 'Statut client',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem<String?>(value: null, child: Text('Tous')),
+                        DropdownMenuItem<String?>(value: 'prospect', child: Text('Prospects')),
+                        DropdownMenuItem<String?>(value: 'actif', child: Text('Actifs')),
+                        DropdownMenuItem<String?>(value: 'inactif', child: Text('Inactifs')),
                       ],
+                      onChanged: (value) async {
+                        await context.read<ClientsProvider>().filtrerClientsCrm(value);
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -603,25 +609,6 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                 ],
               ),
       ),
-    );
-  }
-
-  Widget _filterButton(String label, String? statut) {
-    final provider = context.watch<ClientsProvider>();
-    final isSelected = provider.crmStatutFilter == statut;
-
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        backgroundColor: isSelected ? Colors.green.shade50 : null,
-        side: BorderSide(
-          color: isSelected ? Colors.green : Colors.grey.shade500,
-          width: isSelected ? 1.5 : 1.0,
-        ),
-      ),
-      onPressed: () async {
-        await context.read<ClientsProvider>().filtrerClientsCrm(statut);
-      },
-      child: Text(label),
     );
   }
 

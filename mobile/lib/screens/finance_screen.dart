@@ -207,6 +207,22 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ? '${DateFormat('dd/MM/yyyy').format(provider.dateFrom!)} - ${DateFormat('dd/MM/yyyy').format(provider.dateTo!)}'
         : 'Aucun intervalle';
 
+    final sourceSummary = provider.sourceFilters.isEmpty
+      ? 'Tous les types'
+      : provider.sourceFilters
+        .map((value) => _sourceOptions.firstWhere(
+            (opt) => opt['value'] == value,
+            orElse: () => {'label': value},
+          )['label'] ?? value)
+        .join(', ');
+
+    final weekdaySummary = provider.weekdayFilters.isEmpty
+      ? 'Tous les jours'
+      : _weekdayOptions
+        .where((opt) => provider.weekdayFilters.contains(opt['value']))
+        .map((opt) => (opt['label'] ?? '').toString())
+        .join(', ');
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -215,39 +231,21 @@ class _FinanceScreenState extends State<FinanceScreen> {
           children: [
             const Text('Filtres mouvements', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text('Type de mouvement'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _sourceOptions
-                  .where((opt) => (opt['value'] ?? '').isNotEmpty)
-                  .map((opt) {
-                    final value = opt['value']!;
-                    final selected = provider.sourceFilters.contains(value);
-                    return FilterChip(
-                      label: Text(opt['label'] ?? ''),
-                      selected: selected,
-                      onSelected: (_) => context.read<FinanceProvider>().toggleSourceFilter(value),
-                    );
-                  })
-                  .toList(),
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Types de mouvement'),
+              subtitle: Text(sourceSummary, maxLines: 2, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.arrow_drop_down),
+              onTap: () => _showSourceSelectionDialog(provider),
             ),
-            const SizedBox(height: 8),
-            const Text('Jours de la semaine'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _weekdayOptions.map((opt) {
-                final value = opt['value'] as int;
-                final selected = provider.weekdayFilters.contains(value);
-                return FilterChip(
-                  label: Text(opt['label'] as String),
-                  selected: selected,
-                  onSelected: (_) => context.read<FinanceProvider>().toggleWeekdayFilter(value),
-                );
-              }).toList(),
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Jours de la semaine'),
+              subtitle: Text(weekdaySummary, maxLines: 2, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.arrow_drop_down),
+              onTap: () => _showWeekdaySelectionDialog(provider),
             ),
             const SizedBox(height: 8),
             Row(
@@ -320,6 +318,108 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showSourceSelectionDialog(FinanceProvider provider) async {
+    final current = provider.sourceFilters.toSet();
+    final selected = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) {
+        final temp = current.toSet();
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Types de mouvement'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _sourceOptions
+                      .where((opt) => (opt['value'] ?? '').isNotEmpty)
+                      .map((opt) {
+                        final value = opt['value']!;
+                        return CheckboxListTile(
+                          value: temp.contains(value),
+                          title: Text(opt['label'] ?? value),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          dense: true,
+                          onChanged: (checked) {
+                            setDialogState(() {
+                              if (checked == true) {
+                                temp.add(value);
+                              } else {
+                                temp.remove(value);
+                              }
+                            });
+                          },
+                        );
+                      })
+                      .toList(),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Annuler')),
+              TextButton(onPressed: () => Navigator.pop(dialogContext, <String>{}), child: const Text('Tout réinitialiser')),
+              ElevatedButton(onPressed: () => Navigator.pop(dialogContext, temp), child: const Text('Appliquer')),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+    await context.read<FinanceProvider>().setSourceFilters(selected);
+  }
+
+  Future<void> _showWeekdaySelectionDialog(FinanceProvider provider) async {
+    final current = provider.weekdayFilters.toSet();
+    final selected = await showDialog<Set<int>>(
+      context: context,
+      builder: (dialogContext) {
+        final temp = current.toSet();
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Jours de la semaine'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _weekdayOptions.map((opt) {
+                    final value = opt['value'] as int;
+                    final label = (opt['label'] ?? value.toString()).toString();
+                    return CheckboxListTile(
+                      value: temp.contains(value),
+                      title: Text(label),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      dense: true,
+                      onChanged: (checked) {
+                        setDialogState(() {
+                          if (checked == true) {
+                            temp.add(value);
+                          } else {
+                            temp.remove(value);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Annuler')),
+              TextButton(onPressed: () => Navigator.pop(dialogContext, <int>{}), child: const Text('Tout réinitialiser')),
+              ElevatedButton(onPressed: () => Navigator.pop(dialogContext, temp), child: const Text('Appliquer')),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+    await context.read<FinanceProvider>().setWeekdayFilters(selected);
   }
 
   Future<void> _showDateRangePicker() async {

@@ -13,6 +13,13 @@ class GlobalDashboardScreen extends StatefulWidget {
 }
 
 class _GlobalDashboardScreenState extends State<GlobalDashboardScreen> {
+  static const List<Map<String, String>> _periodOptions = [
+    {'value': 'jour', 'label': 'Jour'},
+    {'value': 'semaine', 'label': 'Semaine'},
+    {'value': 'mois', 'label': 'Mois'},
+    {'value': 'annee', 'label': 'Année'},
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -76,14 +83,25 @@ class _GlobalDashboardScreenState extends State<GlobalDashboardScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    _periodChip('jour', provider),
-                    _periodChip('semaine', provider),
-                    _periodChip('mois', provider),
-                    _periodChip('annee', provider),
-                  ],
+                DropdownButtonFormField<String>(
+                  initialValue: provider.period,
+                  decoration: const InputDecoration(
+                    labelText: 'Période',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _periodOptions
+                      .map(
+                        (opt) => DropdownMenuItem<String>(
+                          value: opt['value'],
+                          child: Text(opt['label'] ?? ''),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null && value.isNotEmpty) {
+                      provider.chargerDashboards(period: value);
+                    }
+                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -163,15 +181,6 @@ class _GlobalDashboardScreenState extends State<GlobalDashboardScreen> {
           );
         },
       ),
-    );
-  }
-
-  Widget _periodChip(String period, DashboardProvider provider) {
-    final selected = provider.period == period;
-    return ChoiceChip(
-      label: Text(period.toUpperCase()),
-      selected: selected,
-      onSelected: (_) => provider.chargerDashboards(period: period),
     );
   }
 

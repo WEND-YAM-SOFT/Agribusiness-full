@@ -14,6 +14,7 @@ class ClientsScreen extends StatefulWidget {
 
 class _ClientsScreenState extends State<ClientsScreen> {
   final _searchController = TextEditingController();
+  String _typeFilter = '';
 
   @override
   void initState() {
@@ -39,7 +40,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -65,13 +66,38 @@ class _ClientsScreenState extends State<ClientsScreen> {
               },
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: DropdownButtonFormField<String>(
+              initialValue: _typeFilter,
+              decoration: const InputDecoration(
+                labelText: 'Type client',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem<String>(value: '', child: Text('Tous')),
+                DropdownMenuItem<String>(value: 'particulier', child: Text('Particulier')),
+                DropdownMenuItem<String>(value: 'pro', child: Text('Professionnel (Pro)')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _typeFilter = value ?? '';
+                });
+              },
+            ),
+          ),
           Expanded(
             child: Consumer<ClientsProvider>(
               builder: (context, provider, child) {
                 if (provider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (provider.clients.isEmpty) {
+                final filteredClients = _typeFilter.isEmpty
+                    ? provider.clients
+                    : provider.clients.where((c) => c.typeClient == _typeFilter).toList();
+
+                if (filteredClients.isEmpty) {
                   return const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -84,9 +110,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   );
                 }
                 return ListView.builder(
-                  itemCount: provider.clients.length,
+                  itemCount: filteredClients.length,
                   itemBuilder: (context, index) {
-                    return _buildClientTile(provider.clients[index]);
+                    return _buildClientTile(filteredClients[index]);
                   },
                 );
               },

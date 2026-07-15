@@ -13,6 +13,18 @@ class StocksScreen extends StatefulWidget {
 }
 
 class _StocksScreenState extends State<StocksScreen> {
+  String _categoryFilter = '';
+
+  static const List<Map<String, String>> _categoryOptions = [
+    {'value': '', 'label': 'Toutes catégories'},
+    {'value': 'aliment', 'label': 'Aliments'},
+    {'value': 'medicament', 'label': 'Médicaments'},
+    {'value': 'vitamine', 'label': 'Vitamines'},
+    {'value': 'desinfectant', 'label': 'Désinfectants'},
+    {'value': 'materiel', 'label': 'Matériel'},
+    {'value': 'autre', 'label': 'Autres'},
+  ];
+
   double? _parseDecimal(String value) {
     final normalized = value.trim().replaceAll(',', '.');
     if (normalized.isEmpty) return null;
@@ -66,27 +78,53 @@ class _StocksScreenState extends State<StocksScreen> {
             );
           }
 
+          final visibleStocks = _categoryFilter.isEmpty
+              ? provider.stocks
+              : provider.stocks.where((s) => s.categorie == _categoryFilter).toList();
+
           // Grouper par catégorie
           final Map<String, List<Stock>> parCategorie = {};
-          for (var stock in provider.stocks) {
+          for (var stock in visibleStocks) {
             parCategorie.putIfAbsent(stock.categorie, () => []).add(stock);
           }
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              DropdownButtonFormField<String>(
+                initialValue: _categoryFilter,
+                decoration: const InputDecoration(
+                  labelText: 'Catégorie',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: _categoryOptions
+                    .map(
+                      (opt) => DropdownMenuItem<String>(
+                        value: opt['value'],
+                        child: Text(opt['label'] ?? ''),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _categoryFilter = value ?? '';
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
               // Alertes stock bas
               if (provider.stocks.any((s) => s.enAlerte == true))
                 Card(
                   color: Colors.orange.shade50,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Row(
+                      child: Row(
                       children: [
                         const Icon(Icons.warning_amber, color: Colors.orange),
                         const SizedBox(width: 8),
                         Text(
-                          '${provider.stocks.where((s) => s.enAlerte == true).length} produit(s) en stock bas',
+                          '${visibleStocks.where((s) => s.enAlerte == true).length} produit(s) en stock bas',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -94,6 +132,12 @@ class _StocksScreenState extends State<StocksScreen> {
                   ),
                 ),
               const SizedBox(height: 8),
+
+              if (visibleStocks.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 32),
+                  child: Center(child: Text('Aucun stock pour ce filtre')),
+                ),
 
               // Liste par catégorie
               ...parCategorie.entries.map((entry) => Column(

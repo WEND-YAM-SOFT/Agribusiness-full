@@ -103,7 +103,40 @@ router.get('/audit', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(300);
     if (logs.error) return res.status(500).json({ message: logs.error.message });
-    return res.json(logs.data || []);
+
+    const rows = logs.data || [];
+    const userIds = [...new Set(rows.map((r) => (r.user_id || '').toString()).filter(Boolean))];
+
+    let profileById = new Map();
+    if (userIds.length) {
+      const profiles = await client
+        .from('profiles')
+        .select('id,full_name')
+        .in('id', userIds);
+      if (!profiles.error) {
+        profileById = new Map((profiles.data || []).map((p) => [String(p.id), (p.full_name || '').toString().trim()]));
+      }
+    }
+
+    const mapped = rows.map((row) => {
+      const userId = (row.user_id || '').toString();
+      const userEmail = (row.user_email || '').toString();
+      const actorName = (profileById.get(userId) || '').toString().trim();
+      return {
+        id: row.id,
+        userId,
+        userEmail,
+        action: row.action || '',
+        targetType: row.target_type || '',
+        targetId: row.target_id || null,
+        metadata: row.metadata || {},
+        ip: row.ip || '',
+        createdAt: row.created_at || null,
+        actor: actorName || userEmail || userId || 'Système',
+      };
+    });
+
+    return res.json(mapped);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

@@ -18,6 +18,20 @@ class _AlertesScreenState extends State<AlertesScreen> {
   DateTime? _selectedDate;
   DateTimeRange? _selectedRange;
 
+  static const List<Map<String, String>> _dateFilterOptions = [
+    {'value': 'all', 'label': 'Toutes les dates'},
+    {'value': 'tomorrow', 'label': 'Demain'},
+    {'value': 'date', 'label': 'Date précise'},
+    {'value': 'range', 'label': 'Intervalle'},
+  ];
+
+  static const List<Map<String, String>> _periodOptions = [
+    {'value': 'today', 'label': 'Ma journée'},
+    {'value': 'week', 'label': 'Cette semaine'},
+    {'value': 'month', 'label': 'Ce mois'},
+    {'value': 'all', 'label': 'Toutes les tâches'},
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -76,63 +90,85 @@ class _AlertesScreenState extends State<AlertesScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Wrap(
-                spacing: 8,
-                children: [
-                  ChoiceChip(label: const Text('Toutes'), selected: _dateFilter == 'all', onSelected: (_) => setState(() => _dateFilter = 'all')),
-                  ChoiceChip(label: const Text('Demain'), selected: _dateFilter == 'tomorrow', onSelected: (_) => setState(() => _dateFilter = 'tomorrow')),
-                  ChoiceChip(
-                    label: Text(_dateFilter == 'date' && _selectedDate != null
-                        ? 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}'
-                        : 'Choisir date'),
-                    selected: _dateFilter == 'date',
-                    onSelected: (_) async {
-                      final picked = await showIsoDatePicker(
-                        context: context,
-                        initialDate: _selectedDate ?? DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          _selectedDate = picked;
-                          _dateFilter = 'date';
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: Text(_dateFilter == 'range' && _selectedRange != null
-                        ? 'Du ${DateFormat('dd/MM').format(_selectedRange!.start)} au ${DateFormat('dd/MM').format(_selectedRange!.end)}'
-                        : 'Intervalle'),
-                    selected: _dateFilter == 'range',
-                    onSelected: (_) async {
-                      final picked = await showIsoDateRangePicker(
-                        context: context,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                        initialDateRange: _selectedRange,
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          _selectedRange = picked;
-                          _dateFilter = 'range';
-                        });
-                      }
-                    },
-                  ),
-                ],
+              DropdownButtonFormField<String>(
+                initialValue: _dateFilter,
+                decoration: const InputDecoration(
+                  labelText: 'Filtre date',
+                  border: OutlineInputBorder(),
+                ),
+                items: _dateFilterOptions
+                    .map(
+                      (opt) => DropdownMenuItem<String>(
+                        value: opt['value'],
+                        child: Text(opt['label'] ?? ''),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) async {
+                  if (value == null) return;
+                  if (value == 'date') {
+                    final picked = await showIsoDatePicker(
+                      context: context,
+                      initialDate: _selectedDate ?? DateTime.now(),
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _selectedDate = picked;
+                        _dateFilter = 'date';
+                      });
+                    }
+                    return;
+                  }
+                  if (value == 'range') {
+                    final picked = await showIsoDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                      initialDateRange: _selectedRange,
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _selectedRange = picked;
+                        _dateFilter = 'range';
+                      });
+                    }
+                    return;
+                  }
+                  setState(() => _dateFilter = value);
+                },
               ),
+              if (_dateFilter == 'date' && _selectedDate != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}'),
+                ),
+              if (_dateFilter == 'range' && _selectedRange != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('Du ${DateFormat('dd/MM').format(_selectedRange!.start)} au ${DateFormat('dd/MM').format(_selectedRange!.end)}'),
+                ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _periodChip(provider, 'today', 'Ma journée'),
-                  _periodChip(provider, 'week', 'Cette semaine'),
-                  _periodChip(provider, 'month', 'Ce mois'),
-                  _periodChip(provider, 'all', 'Toutes les tâches'),
-                ],
+              DropdownButtonFormField<String>(
+                initialValue: provider.todoPeriod,
+                decoration: const InputDecoration(
+                  labelText: 'Période',
+                  border: OutlineInputBorder(),
+                ),
+                items: _periodOptions
+                    .map(
+                      (opt) => DropdownMenuItem<String>(
+                        value: opt['value'],
+                        child: Text(opt['label'] ?? ''),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null && value.isNotEmpty) {
+                    provider.chargerAlertes(period: value);
+                  }
+                },
               ),
               const SizedBox(height: 12),
               if (historique.isNotEmpty)
@@ -203,16 +239,6 @@ class _AlertesScreenState extends State<AlertesScreen> {
         icon: const Icon(Icons.add_alert),
         label: const Text('Nouvelle tâche'),
       ),
-    );
-  }
-
-  Widget _periodChip(AlertesProvider provider, String period, String label) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: provider.todoPeriod == period,
-      onSelected: (_) {
-        provider.chargerAlertes(period: period);
-      },
     );
   }
 

@@ -23,6 +23,15 @@ class _CommandesScreenState extends State<CommandesScreen> {
   bool _creatingClient = false;
   bool _showHistoriqueCommandes = false;
 
+  static const List<Map<String, String>> _statusOptions = [
+    {'value': '', 'label': 'Toutes'},
+    {'value': 'en_attente', 'label': 'En attente'},
+    {'value': 'confirmee', 'label': 'Confirmées'},
+    {'value': 'en_preparation', 'label': 'En préparation'},
+    {'value': 'payee', 'label': 'Payées'},
+    {'value': 'annulee', 'label': 'Annulées'},
+  ];
+
   double _parseDecimal(String value) {
     final normalized = value.trim().replaceAll(',', '.');
     if (normalized.isEmpty) return 0;
@@ -95,22 +104,30 @@ class _CommandesScreenState extends State<CommandesScreen> {
                 ),
               ),
             ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Wrap(
-                spacing: 8,
-                children: [
-                  ActionChip(
-                    label: const Text('Toutes'),
-                    onPressed: provider.clearStatutsFilter,
-                  ),
-                  _statusChip(provider, 'en_attente', 'En attente'),
-                  _statusChip(provider, 'confirmee', 'Confirmées'),
-                  _statusChip(provider, 'en_preparation', 'En préparation'),
-                  _statusChip(provider, 'payee', 'Payées'),
-                  _statusChip(provider, 'annulee', 'Annulées'),
-                ],
+              child: DropdownButtonFormField<String>(
+                initialValue: provider.selectedStatuts.length == 1
+                    ? provider.selectedStatuts.first
+                    : '',
+                decoration: const InputDecoration(
+                  labelText: 'Statut',
+                  border: OutlineInputBorder(),
+                ),
+                items: _statusOptions
+                    .map(
+                      (opt) => DropdownMenuItem<String>(
+                        value: opt['value'],
+                        child: Text(opt['label'] ?? ''),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  provider.clearStatutsFilter();
+                  if (value != null && value.isNotEmpty) {
+                    provider.toggleStatut(value);
+                  }
+                },
               ),
             ),
             if (widget.embedded)
@@ -202,14 +219,6 @@ class _CommandesScreenState extends State<CommandesScreen> {
           ],
         );
       },
-    );
-  }
-
-  Widget _statusChip(CommandesProvider provider, String value, String label) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: provider.isStatutSelected(value),
-      onSelected: (_) => provider.toggleStatut(value),
     );
   }
 

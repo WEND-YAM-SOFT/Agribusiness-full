@@ -68,12 +68,26 @@ class FinanceProvider with ChangeNotifier {
     await chargerTresorerie();
   }
 
+  Future<void> setSourceFilters(Iterable<String> sources) async {
+    _sourceFilters
+      ..clear()
+      ..addAll(sources.where((s) => s.trim().isNotEmpty));
+    await chargerTresorerie();
+  }
+
   Future<void> toggleWeekdayFilter(int isoWeekday) async {
     if (_weekdayFilters.contains(isoWeekday)) {
       _weekdayFilters.remove(isoWeekday);
     } else {
       _weekdayFilters.add(isoWeekday);
     }
+    await chargerTresorerie();
+  }
+
+  Future<void> setWeekdayFilters(Iterable<int> weekdays) async {
+    _weekdayFilters
+      ..clear()
+      ..addAll(weekdays.where((d) => d >= 1 && d <= 7));
     await chargerTresorerie();
   }
 
