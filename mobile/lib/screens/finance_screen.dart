@@ -111,10 +111,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       children: [
                         const Text('Solde de caisse', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const SizedBox(height: 8),
-                        Text('Solde actuel: ${formatAmountFcfa(soldeCaisse)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                        Text('Solde actuel: ${formatCompactFcfa(soldeCaisse)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
-                        Text('Total entrees: ${formatAmountFcfa(totalEntrees)}'),
-                        Text('Total sorties: ${formatAmountFcfa(totalSorties)}'),
+                        Text('Total entrees: ${formatCompactFcfa(totalEntrees)}'),
+                        Text('Total sorties: ${formatCompactFcfa(totalSorties)}'),
                       ],
                     ),
                   ),
@@ -263,22 +263,22 @@ class _FinanceScreenState extends State<FinanceScreen> {
               const Text('Aucune analyse chargee pour le moment.')
             else ...[
               Text(
-                'Rapprochement: caisse ${formatAmountFcfa((r['caisseNet'] ?? 0) as num)} | banque ${formatAmountFcfa((r['banqueNet'] ?? 0) as num)} | ecart ${formatAmountFcfa((r['ecart'] ?? 0) as num)}',
+                'Rapprochement: caisse ${formatCompactFcfa((r['caisseNet'] ?? 0) as num)} | banque ${formatCompactFcfa((r['banqueNet'] ?? 0) as num)} | ecart ${formatCompactFcfa((r['ecart'] ?? 0) as num)}',
               ),
               const SizedBox(height: 6),
               Text(
-                'Budget prev.: entrees moy. ${formatAmountFcfa((budget['moyenneEntrees'] ?? 0) as num)} | sorties moy. ${formatAmountFcfa((budget['moyenneSorties'] ?? 0) as num)}',
+                'Budget prev.: entrees moy. ${formatCompactFcfa((budget['moyenneEntrees'] ?? 0) as num)} | sorties moy. ${formatCompactFcfa((budget['moyenneSorties'] ?? 0) as num)}',
               ),
               const SizedBox(height: 6),
               Text(
-                'Projection tresorerie: solde actuel ${formatAmountFcfa((projection['soldeActuel'] ?? 0) as num)} | net mensuel moy. ${formatAmountFcfa((projection['netMoyenMensuel'] ?? 0) as num)}',
+                'Projection tresorerie: solde actuel ${formatCompactFcfa((projection['soldeActuel'] ?? 0) as num)} | net mensuel moy. ${formatCompactFcfa((projection['netMoyenMensuel'] ?? 0) as num)}',
               ),
               if (top3.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 const Text('Top marges par bande:'),
                 const SizedBox(height: 4),
                 ...top3.map((m) => Text(
-                      '- ${(m['bandeNom'] ?? '').toString()}: marge ${formatAmountFcfa((m['marge'] ?? 0) as num)} (taux ${(m['tauxMarge'] ?? 0).toString()}%)',
+                      '- ${(m['bandeNom'] ?? '').toString()}: marge ${formatCompactFcfa((m['marge'] ?? 0) as num)} (taux ${(m['tauxMarge'] ?? 0).toString()}%)',
                     )),
                 const SizedBox(height: 10),
                 _buildTopMargeChart(top3),

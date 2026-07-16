@@ -167,7 +167,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Flexible(child: Text(formatAmountFcfa(c.chiffreAffairesCumul), overflow: TextOverflow.ellipsis)),
+                            Flexible(child: Text(formatCompactFcfa(c.chiffreAffairesCumul), overflow: TextOverflow.ellipsis)),
                             if (canDeleteClient)
                               IconButton(
                                 tooltip: 'Supprimer client',
