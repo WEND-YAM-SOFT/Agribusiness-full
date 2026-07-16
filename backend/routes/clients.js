@@ -1,5 +1,5 @@
 const express = require('express');
-const { getAdminClient } = require('../services/supabase');
+const { getAdminClient, logAudit } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
 const { requirePermission } = require('../middleware/auth');
 
@@ -156,6 +156,14 @@ function mapClientRow(row) {
 function isFournisseurRow(row) {
   const statut = str(row?.statut || row?.status).toLowerCase();
   return statut === 'fournisseur';
+}
+
+async function safeAudit(client, payload) {
+  try {
+    await logAudit(client, payload);
+  } catch (e) {
+    console.warn('client audit log failed:', e?.message || e);
+  }
 }
 
 router.get('/', requirePermission('clients.read'), async (req, res) => {
@@ -332,6 +340,19 @@ router.post('/', requirePermission('clients.create'), async (req, res) => {
     const { data, error } = await insertClientCompat(client, payload);
     if (error) return res.status(400).json({ message: error.message });
 
+    await safeAudit(client, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'client.create',
+      targetType: 'Client',
+      targetId: data.id,
+      metadata: {
+        before: null,
+        after: mapClientRow(data),
+      },
+      ip: '',
+    });
+
     return res.status(201).json(mapClientRow(data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -418,9 +439,25 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       updates.type_client = req.body.typeClient;
     }
 
+    const before = mapClientRow(existing.data);
+
     const saved = await updateClientCompat(client, companyId, req.params.id, updates);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
+
+    await safeAudit(client, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'client.update',
+      targetType: 'Client',
+      targetId: req.params.id,
+      metadata: {
+        before,
+        after: mapClientRow(saved.data),
+      },
+      ip: '',
+    });
+
     return res.json(mapClientRow(saved.data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -432,17 +469,42 @@ router.delete('/:id', requirePermission('clients.delete'), async (req, res) => {
     const client = getAdminClient();
     const companyId = await getCompanyIdForUser(client, req.user.id || req.user._id);
 
+    const existing = await client
+      .from('clients')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (existing.error) return res.status(500).json({ message: existing.error.message });
+    if (!existing.data) return res.status(404).json({ message: 'Client non trouvé' });
+    if (isFournisseurRow(existing.data)) return res.status(404).json({ message: 'Client non trouvé' });
+
+    const before = mapClientRow(existing.data);
+
     const removed = await client
       .from('clients')
       .delete()
       .eq('company_id', companyId)
-      .neq('statut', 'fournisseur')
       .eq('id', req.params.id)
       .select('id')
       .maybeSingle();
 
     if (removed.error) return res.status(500).json({ message: removed.error.message });
     if (!removed.data) return res.status(404).json({ message: 'Client non trouvé' });
+
+    await safeAudit(client, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'client.delete',
+      targetType: 'Client',
+      targetId: req.params.id,
+      metadata: {
+        before,
+        after: null,
+      },
+      ip: '',
+    });
 
     return res.json({ message: 'Client supprimé' });
   } catch (err) {

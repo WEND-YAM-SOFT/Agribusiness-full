@@ -1,5 +1,5 @@
 const express = require('express');
-const { getAdminClient } = require('../services/supabase');
+const { getAdminClient, logAudit } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
 const { requirePermission, requireAnyPermission } = require('../middleware/auth');
 
@@ -134,6 +134,14 @@ function mapFournisseurRow(row) {
 function isFournisseurRow(row) {
   const statut = str(row?.statut || row?.status).toLowerCase();
   return statut === 'fournisseur';
+}
+
+async function safeAudit(client, payload) {
+  try {
+    await logAudit(client, payload);
+  } catch (e) {
+    console.warn('fournisseur audit log failed:', e?.message || e);
+  }
 }
 
 router.get('/', requirePermission('clients.read'), async (req, res) => {
@@ -307,6 +315,19 @@ router.post('/', requirePermission('clients.create'), async (req, res) => {
     const { data, error } = await insertFournisseurCompat(client, payload);
     if (error) return res.status(400).json({ message: error.message });
 
+    await safeAudit(client, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'fournisseur.create',
+      targetType: 'Fournisseur',
+      targetId: data.id,
+      metadata: {
+        before: null,
+        after: mapFournisseurRow(data),
+      },
+      ip: '',
+    });
+
     return res.status(201).json(mapFournisseurRow(data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -394,9 +415,25 @@ router.put('/:id', requirePermission('clients.update'), async (req, res) => {
       updates.type_client = req.body.typeClient;
     }
 
+    const before = mapFournisseurRow(existing.data);
+
     const saved = await updateFournisseurCompat(client, companyId, req.params.id, updates);
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
+
+    await safeAudit(client, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'fournisseur.update',
+      targetType: 'Fournisseur',
+      targetId: req.params.id,
+      metadata: {
+        before,
+        after: mapFournisseurRow(saved.data),
+      },
+      ip: '',
+    });
+
     return res.json(mapFournisseurRow(saved.data));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -430,6 +467,19 @@ router.delete('/:id', requireAnyPermission(['clients.delete', 'clients.update'])
 
     if (removed.error) return res.status(500).json({ message: removed.error.message });
     if (!removed.data) return res.status(404).json({ message: 'Fournisseur non trouvé' });
+
+    await safeAudit(client, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'fournisseur.delete',
+      targetType: 'Fournisseur',
+      targetId: req.params.id,
+      metadata: {
+        before: mapFournisseurRow(existing.data),
+        after: null,
+      },
+      ip: '',
+    });
 
     return res.json({ message: 'Fournisseur supprimé' });
   } catch (err) {

@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { getAdminClient } = require('../services/supabase');
+const { getAdminClient, logAudit } = require('../services/supabase');
 const { getCompanyIdForUser } = require('../services/company_scope');
 const { requirePermission, requireAnyPermission, hasPermission } = require('../middleware/auth');
 
@@ -15,6 +15,14 @@ function csvEscape(value) {
 
 function toCsv(rows) {
   return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
+async function safeAudit(client, payload) {
+  try {
+    await logAudit(client, payload);
+  } catch (e) {
+    console.warn('commande audit log failed:', e?.message || e);
+  }
 }
 
 function isCommandeHistorique(row) {
@@ -680,6 +688,19 @@ router.post('/', requirePermission('commandes.create'), async (req, res) => {
       }
     }
 
+    await safeAudit(apiClient, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'commande.create',
+      targetType: 'Commande',
+      targetId: inserted.data.id,
+      metadata: {
+        before: null,
+        after: mapCommandeRow(inserted.data, clientSnapshot),
+      },
+      ip: '',
+    });
+
     return res.status(201).json(mapCommandeRow(inserted.data, clientSnapshot));
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -707,6 +728,8 @@ router.put('/:id/statut', requireAnyPermission(['commandes.status.prepare', 'com
     if (isCommandeHistorique(current.data)) {
       return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
     }
+
+    const before = mapCommandeRow(current.data, null);
 
     const historique = toArray(current.data.historique_actions);
     historique.push({
@@ -765,6 +788,19 @@ router.put('/:id/statut', requireAnyPermission(['commandes.status.prepare', 'com
         .maybeSingle();
       if (!clientRes.error) linkedClient = clientRes.data;
     }
+
+    await safeAudit(apiClient, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'commande.status.update',
+      targetType: 'Commande',
+      targetId: req.params.id,
+      metadata: {
+        before,
+        after: mapCommandeRow(saved.data, linkedClient),
+      },
+      ip: '',
+    });
 
     return res.json(mapCommandeRow(saved.data, linkedClient));
   } catch (err) {
@@ -1031,6 +1067,8 @@ router.put('/:id', requirePermission('commandes.update'), async (req, res) => {
       return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
     }
 
+    const before = mapCommandeRow(current.data, null);
+
     const updates = { updated_at: new Date().toISOString() };
     if (req.body.clientId !== undefined) updates.client_id = req.body.clientId;
     if (req.body.bandeId !== undefined) updates.bande_id = req.body.bandeId;
@@ -1049,6 +1087,19 @@ router.put('/:id', requirePermission('commandes.update'), async (req, res) => {
 
     if (saved.error) return res.status(400).json({ message: saved.error.message });
     if (!saved.data) return res.status(404).json({ message: 'Commande non trouvée' });
+
+    await safeAudit(apiClient, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'commande.update',
+      targetType: 'Commande',
+      targetId: req.params.id,
+      metadata: {
+        before,
+        after: mapCommandeRow(saved.data, null),
+      },
+      ip: '',
+    });
 
     return res.json(mapCommandeRow(saved.data, null));
   } catch (err) {
@@ -1125,6 +1176,8 @@ router.delete('/:id', requirePermission('commandes.delete'), async (req, res) =>
       return res.status(400).json({ message: 'Cette commande est dans l\'historique et n\'est plus modifiable' });
     }
 
+    const before = mapCommandeRow(current.data, null);
+
     let removed = null;
     for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
       const result = await apiClient
@@ -1149,6 +1202,19 @@ router.delete('/:id', requirePermission('commandes.delete'), async (req, res) =>
 
     if (removed.error) return res.status(500).json({ message: removed.error.message });
     if (!removed.data) return res.status(404).json({ message: 'Commande non trouvée' });
+
+    await safeAudit(apiClient, {
+      userId: req.user.id || req.user._id,
+      userEmail: req.user.email,
+      action: 'commande.delete',
+      targetType: 'Commande',
+      targetId: req.params.id,
+      metadata: {
+        before,
+        after: null,
+      },
+      ip: '',
+    });
 
     return res.json({ message: 'Commande supprimée' });
   } catch (err) {
