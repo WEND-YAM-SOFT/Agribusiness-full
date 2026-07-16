@@ -639,7 +639,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                 final stage = stageOrder[i];
                 final count = values[i];
                 return BarTooltipItem(
-                  '$stage\n${count.toStringAsFixed(0)} client(s)',
+                  '$stage\n${formatCompactNumber(count)} client(s)',
                   const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                 );
               },
@@ -706,7 +706,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                 final source = (subset[i]['source'] ?? '').toString();
                 final count = ((subset[i]['count'] ?? 0) as num).toDouble();
                 return BarTooltipItem(
-                  '$source\n${count.toStringAsFixed(0)} lead(s)',
+                  '$source\n${formatCompactNumber(count)} lead(s)',
                   const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                 );
               },

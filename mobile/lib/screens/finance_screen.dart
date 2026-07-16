@@ -326,7 +326,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 final name = (rows[i]['bandeNom'] ?? '').toString();
                 final marge = ((rows[i]['marge'] ?? 0) as num);
                 return BarTooltipItem(
-                  '$name\nMarge: ${formatAmountFcfa(marge)}',
+                  '$name\nMarge: ${formatCompactFcfa(marge)}',
                   const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                 );
               },
@@ -392,7 +392,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       final month = (parsed[i]['mois'] ?? '').toString();
                       final value = ((parsed[i]['soldeProjete'] ?? 0) as num);
                       return LineTooltipItem(
-                        '$month\n${formatAmountFcfa(value)}',
+                        '$month\n${formatCompactFcfa(value)}',
                         const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                       );
                     }).toList();
