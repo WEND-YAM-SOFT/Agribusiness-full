@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -279,11 +280,124 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 ...top3.map((m) => Text(
                       '- ${(m['bandeNom'] ?? '').toString()}: marge ${formatAmountFcfa((m['marge'] ?? 0) as num)} (taux ${(m['tauxMarge'] ?? 0).toString()}%)',
                     )),
+                const SizedBox(height: 10),
+                _buildTopMargeChart(top3),
               ],
+              const SizedBox(height: 12),
+              _buildProjectionChart((projection['projection'] as List? ?? const [])),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTopMargeChart(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final spots = <BarChartGroupData>[];
+    for (var i = 0; i < rows.length; i += 1) {
+      final marge = ((rows[i]['marge'] ?? 0) as num).toDouble();
+      spots.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: marge,
+              width: 18,
+              borderRadius: BorderRadius.circular(4),
+              color: marge >= 0 ? Colors.green : Colors.red,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 200,
+      child: BarChart(
+        BarChartData(
+          gridData: const FlGridData(show: true),
+          titlesData: FlTitlesData(
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= rows.length) return const SizedBox.shrink();
+                  final label = (rows[i]['bandeNom'] ?? '').toString();
+                  final short = label.length > 10 ? '${label.substring(0, 10)}…' : label;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(short, style: const TextStyle(fontSize: 10)),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: spots,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProjectionChart(List projectionRows) {
+    final parsed = projectionRows
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    if (parsed.isEmpty) return const SizedBox.shrink();
+
+    final spots = <FlSpot>[];
+    for (var i = 0; i < parsed.length; i += 1) {
+      final y = ((parsed[i]['soldeProjete'] ?? 0) as num).toDouble();
+      spots.add(FlSpot(i.toDouble(), y));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Courbe projection tresorerie'),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 220,
+          child: LineChart(
+            LineChartData(
+              gridData: const FlGridData(show: true),
+              titlesData: FlTitlesData(
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    getTitlesWidget: (value, meta) {
+                      final i = value.toInt();
+                      if (i < 0 || i >= parsed.length) return const SizedBox.shrink();
+                      final month = (parsed[i]['mois'] ?? '').toString();
+                      final compact = month.length >= 7 ? month.substring(2) : month;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(compact, style: const TextStyle(fontSize: 10)),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: spots,
+                  isCurved: true,
+                  color: Colors.blue,
+                  barWidth: 3,
+                  dotData: const FlDotData(show: true),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

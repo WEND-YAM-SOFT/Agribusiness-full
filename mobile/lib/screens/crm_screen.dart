@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import '../models/client.dart';
 import '../models/tache_crm.dart';
@@ -183,7 +184,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                       ),
                       onTap: () {
                         setState(() => selectedClient = c);
-                        _tabController.animateTo(2);
+                        _tabController.animateTo(3);
                         context.read<CrmProvider>().chargerInteractionsClient(c.id!);
                       },
                     ),
@@ -540,22 +541,15 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                       if (stages.isEmpty)
                         const Text('Aucune donnée d\'etape pour le moment')
                       else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: stages
-                              .map(
-                                (s) => Chip(
-                                  label: Text('${(s['stage'] ?? '').toString()}: ${(s['count'] ?? 0).toString()}'),
-                                ),
-                              )
-                              .toList(),
-                        ),
+                        _buildPipelineFunnelChart(stages),
                       const SizedBox(height: 8),
-                      if (sources.isNotEmpty)
+                      if (sources.isNotEmpty) ...[
                         Text(
                           'Sources leads: ${sources.map((s) => '${s['source']} (${s['count']})').join(' | ')}',
                         ),
+                        const SizedBox(height: 8),
+                        _buildLeadSourcesChart(sources),
+                      ],
                     ],
                   ),
                 ),
@@ -601,6 +595,115 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
           ),
         );
       },
+    );
+  }
+
+  Widget _buildPipelineFunnelChart(List<Map<String, dynamic>> stages) {
+    const stageOrder = ['lead', 'qualifie', 'proposition', 'negociation', 'gagne', 'perdu'];
+    final stageMap = {
+      for (final s in stages) (s['stage'] ?? '').toString(): ((s['count'] ?? 0) as num).toDouble(),
+    };
+    final values = stageOrder.map((s) => stageMap[s] ?? 0).toList();
+
+    final groups = <BarChartGroupData>[];
+    for (var i = 0; i < values.length; i += 1) {
+      final val = values[i];
+      groups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: val,
+              width: 14,
+              borderRadius: BorderRadius.circular(4),
+              color: i == values.length - 1
+                  ? Colors.redAccent
+                  : (i == values.length - 2 ? Colors.green : Colors.indigo),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 200,
+      child: BarChart(
+        BarChartData(
+          gridData: const FlGridData(show: true),
+          titlesData: FlTitlesData(
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= stageOrder.length) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(stageOrder[i], style: const TextStyle(fontSize: 10)),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: groups,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLeadSourcesChart(List<Map<String, dynamic>> sources) {
+    final top = [...sources]
+      ..sort((a, b) => ((b['count'] ?? 0) as num).compareTo((a['count'] ?? 0) as num));
+    final subset = top.take(6).toList();
+    if (subset.isEmpty) return const SizedBox.shrink();
+
+    final groups = <BarChartGroupData>[];
+    for (var i = 0; i < subset.length; i += 1) {
+      final count = ((subset[i]['count'] ?? 0) as num).toDouble();
+      groups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: count,
+              width: 14,
+              borderRadius: BorderRadius.circular(4),
+              color: Colors.teal,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 180,
+      child: BarChart(
+        BarChartData(
+          gridData: const FlGridData(show: true),
+          titlesData: FlTitlesData(
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= subset.length) return const SizedBox.shrink();
+                  final label = (subset[i]['source'] ?? '').toString();
+                  final short = label.length > 9 ? '${label.substring(0, 9)}…' : label;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(short, style: const TextStyle(fontSize: 10)),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: groups,
+        ),
+      ),
     );
   }
 
