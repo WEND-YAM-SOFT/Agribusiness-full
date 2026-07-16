@@ -16,6 +16,10 @@ class FinanceProvider with ChangeNotifier {
   int? _yearFilter;
   DateTime? _dateFrom;
   DateTime? _dateTo;
+  Map<String, dynamic> _rapprochement = {};
+  Map<String, dynamic> _budgetPrevisionnel = {};
+  List<Map<String, dynamic>> _margesBandes = [];
+  Map<String, dynamic> _projectionTresorerie = {};
 
   bool get isLoading => _isLoading;
   String? get lastError => _lastError;
@@ -27,6 +31,10 @@ class FinanceProvider with ChangeNotifier {
   int? get yearFilter => _yearFilter;
   DateTime? get dateFrom => _dateFrom;
   DateTime? get dateTo => _dateTo;
+  Map<String, dynamic> get rapprochement => _rapprochement;
+  Map<String, dynamic> get budgetPrevisionnel => _budgetPrevisionnel;
+  List<Map<String, dynamic>> get margesBandes => _margesBandes;
+  Map<String, dynamic> get projectionTresorerie => _projectionTresorerie;
 
   Future<void> chargerTresorerie() async {
     _isLoading = true;
@@ -56,6 +64,31 @@ class FinanceProvider with ChangeNotifier {
       _lastError = e.toString().replaceFirst('Exception: ', '');
     }
     _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> chargerAnalysesAvancees({int months = 6}) async {
+    _lastError = null;
+    notifyListeners();
+    try {
+      final rapprochementData = await ApiService.getRapprochementCaisseBanques(
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
+      );
+      final budgetData = await ApiService.getBudgetPrevisionnel(months: months);
+      final margesData = await ApiService.getMargeParBande();
+      final projectionData = await ApiService.getProjectionTresorerie(months: months);
+
+      _rapprochement = Map<String, dynamic>.from(rapprochementData);
+      _budgetPrevisionnel = Map<String, dynamic>.from(budgetData);
+      _margesBandes = margesData
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      _projectionTresorerie = Map<String, dynamic>.from(projectionData);
+    } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '');
+    }
     notifyListeners();
   }
 

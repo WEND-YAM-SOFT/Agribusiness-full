@@ -4,6 +4,7 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
+const COMMANDES_COMPANY_COLUMNS = ['company_id', 'companyId'];
 
 function csvEscape(value) {
   const raw = value == null ? '' : String(value);
@@ -140,6 +141,302 @@ function inWeekdays(rowDate, weekdays) {
   const iso = jsDay === 0 ? 7 : jsDay;
   return weekdays.includes(iso);
 }
+
+function normalizeMonthKey(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function shiftMonth(date, offset) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
+  d.setUTCMonth(d.getUTCMonth() + offset);
+  return d;
+}
+
+function toIsoDate(value) {
+  const d = value ? new Date(value) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function isPaidCommande(row) {
+  const status = (row?.statut || row?.status || '').toString().toLowerCase();
+  return status === 'payee';
+}
+
+async function fetchCommandesCompat(api, companyId) {
+  let lastError = null;
+  for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+    const result = await api
+      .from('commandes')
+      .select('*')
+      .eq(companyColumn, companyId);
+
+    if (!result.error) {
+      return { data: result.data || [], error: null };
+    }
+
+    const missing = extractMissingColumn(result.error);
+    if (missing === companyColumn) {
+      lastError = result.error;
+      continue;
+    }
+
+    return { data: [], error: result.error };
+  }
+
+  return { data: [], error: lastError };
+}
+
+router.get('/rapprochement', requirePermission('finance.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+    const dateFrom = toIsoDate(req.query.dateFrom);
+    const dateTo = toIsoDate(req.query.dateTo);
+
+    let query = api
+      .from('tresorerie_mouvements')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('date_mouvement', { ascending: false });
+
+    if (dateFrom) query = query.gte('date_mouvement', dateFrom);
+    if (dateTo) query = query.lte('date_mouvement', dateTo);
+
+    const mouvementsRes = await query.limit(5000);
+    if (mouvementsRes.error) return res.status(500).json({ message: mouvementsRes.error.message });
+
+    let caisseNet = 0;
+    let banqueNet = 0;
+    let nonClassesNet = 0;
+    let totalEntrees = 0;
+    let totalSorties = 0;
+    let nonClassesCount = 0;
+
+    for (const row of mouvementsRes.data || []) {
+      const montant = Number(row.montant || 0);
+      const sign = row.nature === 'sortie' ? -1 : 1;
+      const categorie = (row.categorie || row.category || '').toString().toLowerCase();
+      const source = (row.source || '').toString().toLowerCase();
+      const cible = `${categorie} ${source}`;
+
+      if (sign > 0) totalEntrees += montant;
+      else totalSorties += montant;
+
+      if (cible.includes('caisse')) {
+        caisseNet += sign * montant;
+      } else if (cible.includes('banque') || cible.includes('bank')) {
+        banqueNet += sign * montant;
+      } else {
+        nonClassesNet += sign * montant;
+        nonClassesCount += 1;
+      }
+    }
+
+    const netGlobal = totalEntrees - totalSorties;
+    const ecart = netGlobal - (caisseNet + banqueNet + nonClassesNet);
+
+    return res.json({
+      totalEntrees,
+      totalSorties,
+      netGlobal,
+      caisseNet,
+      banqueNet,
+      nonClassesNet,
+      nonClassesCount,
+      ecart,
+      dateFrom,
+      dateTo,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/budget-previsionnel', requirePermission('finance.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+    const horizonMonths = Math.min(Math.max(Number(req.query.months || 6), 1), 24);
+
+    const historyFrom = shiftMonth(new Date(), -12).toISOString();
+    const mouvRes = await api
+      .from('tresorerie_mouvements')
+      .select('nature,montant,date_mouvement')
+      .eq('company_id', companyId)
+      .gte('date_mouvement', historyFrom)
+      .order('date_mouvement', { ascending: true });
+
+    if (mouvRes.error) return res.status(500).json({ message: mouvRes.error.message });
+
+    const byMonth = new Map();
+    for (const row of mouvRes.data || []) {
+      const key = normalizeMonthKey(row.date_mouvement);
+      if (!key) continue;
+      const current = byMonth.get(key) || { entrees: 0, sorties: 0 };
+      const montant = Number(row.montant || 0);
+      if (row.nature === 'entree') current.entrees += montant;
+      else if (row.nature === 'sortie') current.sorties += montant;
+      byMonth.set(key, current);
+    }
+
+    const months = Array.from(byMonth.values());
+    const avgEntrees = months.length ? months.reduce((s, m) => s + m.entrees, 0) / months.length : 0;
+    const avgSorties = months.length ? months.reduce((s, m) => s + m.sorties, 0) / months.length : 0;
+
+    const nowMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    const projection = [];
+    for (let i = 1; i <= horizonMonths; i += 1) {
+      const d = shiftMonth(nowMonth, i);
+      projection.push({
+        mois: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
+        entreesPrevues: Number(avgEntrees.toFixed(2)),
+        sortiesPrevues: Number(avgSorties.toFixed(2)),
+        netPrevu: Number((avgEntrees - avgSorties).toFixed(2)),
+      });
+    }
+
+    return res.json({
+      moisAnalyses: months.length,
+      moyenneEntrees: Number(avgEntrees.toFixed(2)),
+      moyenneSorties: Number(avgSorties.toFixed(2)),
+      projection,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/marge-par-bande', requirePermission('finance.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const bandesRes = await api
+      .from('bandes')
+      .select('id,nom,statut,date_ouverture,date_fermeture')
+      .eq('company_id', companyId)
+      .order('date_ouverture', { ascending: false })
+      .limit(200);
+    if (bandesRes.error) return res.status(500).json({ message: bandesRes.error.message });
+
+    const commandesRes = await fetchCommandesCompat(api, companyId);
+    if (commandesRes.error) return res.status(500).json({ message: commandesRes.error.message });
+
+    const mouvRes = await api
+      .from('tresorerie_mouvements')
+      .select('nature,montant,reference_type,reference_id,commentaire')
+      .eq('company_id', companyId)
+      .limit(8000);
+    if (mouvRes.error) return res.status(500).json({ message: mouvRes.error.message });
+
+    const revenusByBande = new Map();
+    for (const row of commandesRes.data || []) {
+      if (!isPaidCommande(row)) continue;
+      const bandeId = row.bande_id || row.bandeId;
+      if (!bandeId) continue;
+      const amount = Number(row.montant_total || row.montantTotal || row.amount_total || 0);
+      revenusByBande.set(String(bandeId), (revenusByBande.get(String(bandeId)) || 0) + amount);
+    }
+
+    const depensesByBande = new Map();
+    for (const row of mouvRes.data || []) {
+      if (row.nature !== 'sortie') continue;
+      const refType = (row.reference_type || '').toString().toLowerCase();
+      const refId = row.reference_id ? String(row.reference_id) : null;
+      if (refType === 'bande' && refId) {
+        depensesByBande.set(refId, (depensesByBande.get(refId) || 0) + Number(row.montant || 0));
+      }
+    }
+
+    const marges = (bandesRes.data || []).map((b) => {
+      const id = String(b.id);
+      const revenus = Number(revenusByBande.get(id) || 0);
+      const depenses = Number(depensesByBande.get(id) || 0);
+      const marge = revenus - depenses;
+      const taux = revenus > 0 ? (marge / revenus) * 100 : 0;
+      return {
+        bandeId: b.id,
+        bandeNom: b.nom || '',
+        statut: b.statut || 'ouverte',
+        dateOuverture: b.date_ouverture || null,
+        dateFermeture: b.date_fermeture || null,
+        revenus: Number(revenus.toFixed(2)),
+        depenses: Number(depenses.toFixed(2)),
+        marge: Number(marge.toFixed(2)),
+        tauxMarge: Number(taux.toFixed(2)),
+      };
+    });
+
+    return res.json(marges);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/projection-tresorerie', requirePermission('finance.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+    const horizonMonths = Math.min(Math.max(Number(req.query.months || 6), 1), 24);
+
+    const allMouvRes = await api
+      .from('tresorerie_mouvements')
+      .select('nature,montant,date_mouvement')
+      .eq('company_id', companyId)
+      .order('date_mouvement', { ascending: true })
+      .limit(15000);
+    if (allMouvRes.error) return res.status(500).json({ message: allMouvRes.error.message });
+
+    let soldeActuel = 0;
+    for (const row of allMouvRes.data || []) {
+      const montant = Number(row.montant || 0);
+      soldeActuel += row.nature === 'sortie' ? -montant : montant;
+    }
+
+    const recentFrom = shiftMonth(new Date(), -6).toISOString();
+    const recent = (allMouvRes.data || []).filter((row) => {
+      const t = new Date(row.date_mouvement).getTime();
+      return !Number.isNaN(t) && t >= new Date(recentFrom).getTime();
+    });
+
+    const monthly = new Map();
+    for (const row of recent) {
+      const key = normalizeMonthKey(row.date_mouvement);
+      if (!key) continue;
+      const current = monthly.get(key) || { net: 0 };
+      const montant = Number(row.montant || 0);
+      current.net += row.nature === 'sortie' ? -montant : montant;
+      monthly.set(key, current);
+    }
+
+    const values = Array.from(monthly.values()).map((m) => m.net);
+    const netMoyenMensuel = values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+
+    const nowMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    let soldeProjete = soldeActuel;
+    const projection = [];
+    for (let i = 1; i <= horizonMonths; i += 1) {
+      const d = shiftMonth(nowMonth, i);
+      soldeProjete += netMoyenMensuel;
+      projection.push({
+        mois: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
+        variationPrevue: Number(netMoyenMensuel.toFixed(2)),
+        soldeProjete: Number(soldeProjete.toFixed(2)),
+      });
+    }
+
+    return res.json({
+      soldeActuel: Number(soldeActuel.toFixed(2)),
+      netMoyenMensuel: Number(netMoyenMensuel.toFixed(2)),
+      projection,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
 
 router.get('/mouvements', requirePermission('finance.read'), async (req, res) => {
   try {

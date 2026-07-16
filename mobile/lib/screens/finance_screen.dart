@@ -66,7 +66,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<FinanceProvider>().chargerTresorerie();
+      final provider = context.read<FinanceProvider>();
+      provider.chargerTresorerie();
+      provider.chargerAnalysesAvancees();
     });
   }
 
@@ -92,7 +94,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
           final soldeCaisse = (solde['soldeCaisse'] ?? 0) as num;
 
           return RefreshIndicator(
-            onRefresh: provider.chargerTresorerie,
+            onRefresh: () async {
+              await provider.chargerTresorerie();
+              await provider.chargerAnalysesAvancees();
+            },
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -139,6 +144,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 ],
                 const SizedBox(height: 16),
                 _buildFiltresCard(provider),
+                const SizedBox(height: 12),
+                _buildAnalysesAvanceesCard(provider),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -210,6 +217,72 @@ class _FinanceScreenState extends State<FinanceScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildAnalysesAvanceesCard(FinanceProvider provider) {
+    final r = provider.rapprochement;
+    final budget = provider.budgetPrevisionnel;
+    final projection = provider.projectionTresorerie;
+    final marges = provider.margesBandes;
+
+    final rapprochementLoaded = r.isNotEmpty;
+    final budgetLoaded = budget.isNotEmpty;
+    final projectionLoaded = projection.isNotEmpty;
+
+    final sortedMarges = [...marges]
+      ..sort((a, b) => ((b['marge'] ?? 0) as num).compareTo((a['marge'] ?? 0) as num));
+
+    final top3 = sortedMarges.take(3).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Analyses financieres avancees',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => context.read<FinanceProvider>().chargerAnalysesAvancees(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Actualiser'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (!rapprochementLoaded && !budgetLoaded && !projectionLoaded && marges.isEmpty)
+              const Text('Aucune analyse chargee pour le moment.')
+            else ...[
+              Text(
+                'Rapprochement: caisse ${formatAmountFcfa((r['caisseNet'] ?? 0) as num)} | banque ${formatAmountFcfa((r['banqueNet'] ?? 0) as num)} | ecart ${formatAmountFcfa((r['ecart'] ?? 0) as num)}',
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Budget prev.: entrees moy. ${formatAmountFcfa((budget['moyenneEntrees'] ?? 0) as num)} | sorties moy. ${formatAmountFcfa((budget['moyenneSorties'] ?? 0) as num)}',
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Projection tresorerie: solde actuel ${formatAmountFcfa((projection['soldeActuel'] ?? 0) as num)} | net mensuel moy. ${formatAmountFcfa((projection['netMoyenMensuel'] ?? 0) as num)}',
+              ),
+              if (top3.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Text('Top marges par bande:'),
+                const SizedBox(height: 4),
+                ...top3.map((m) => Text(
+                      '- ${(m['bandeNom'] ?? '').toString()}: marge ${formatAmountFcfa((m['marge'] ?? 0) as num)} (taux ${(m['tauxMarge'] ?? 0).toString()}%)',
+                    )),
+              ],
+            ],
+          ],
+        ),
       ),
     );
   }

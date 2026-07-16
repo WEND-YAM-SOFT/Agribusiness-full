@@ -380,6 +380,25 @@ class ApiService {
         return _getCsv('/finance/mouvements/export.csv', query: query);
     }
 
+    static Future<Map<String, dynamic>> getRapprochementCaisseBanques({
+        DateTime? dateFrom,
+        DateTime? dateTo,
+    }) async {
+        final query = <String, String>{};
+        if (dateFrom != null) query['dateFrom'] = dateFrom.toIso8601String();
+        if (dateTo != null) query['dateTo'] = dateTo.toIso8601String();
+        return Map<String, dynamic>.from(_ensureSuccess(await _get('/finance/rapprochement', query: query)));
+    }
+
+    static Future<Map<String, dynamic>> getBudgetPrevisionnel({int months = 6}) async =>
+            Map<String, dynamic>.from(_ensureSuccess(await _get('/finance/budget-previsionnel', query: {'months': '$months'})));
+
+    static Future<List<dynamic>> getMargeParBande() async =>
+            List<dynamic>.from(_ensureSuccess(await _get('/finance/marge-par-bande')) ?? []);
+
+    static Future<Map<String, dynamic>> getProjectionTresorerie({int months = 6}) async =>
+            Map<String, dynamic>.from(_ensureSuccess(await _get('/finance/projection-tresorerie', query: {'months': '$months'})));
+
   // CRM
   static Future<Map<String, dynamic>> getCrmDashboard() async =>
       Map<String, dynamic>.from(_ensureSuccess(await _get('/crm/dashboard')));
@@ -409,6 +428,12 @@ class ApiService {
 
     static Future<String> exportHistoriqueTachesCrmCsv() async =>
             _getCsv('/crm/taches/historique/export.csv');
+
+    static Future<Map<String, dynamic>> getPipelineCommercial() async =>
+            Map<String, dynamic>.from(_ensureSuccess(await _get('/crm/pipeline')));
+
+    static Future<Map<String, dynamic>> mettreAJourPipelineClient(String clientId, Map<String, dynamic> data) async =>
+            Map<String, dynamic>.from(_ensureSuccess(await _post('/crm/pipeline/$clientId', body: data), accepted: const [201]));
 
   // Dashboard / Reports
     static Future<Map<String, dynamic>> getGlobalDashboard({String period = 'mois', String? bandeId, String? batiment}) async =>

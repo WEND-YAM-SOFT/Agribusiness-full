@@ -29,10 +29,12 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initialiserFiltresClients();
-      context.read<CrmProvider>().chargerTachesCrm();
+      final crm = context.read<CrmProvider>();
+      crm.chargerTachesCrm();
+      crm.chargerPipelineCommercial();
     });
   }
 
@@ -61,6 +63,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
           tabs: const [
             Tab(icon: Icon(Icons.people_outline), text: 'Clients'),
             Tab(icon: Icon(Icons.business_outlined), text: 'Fournisseurs'),
+            Tab(icon: Icon(Icons.account_tree_outlined), text: 'Pipeline'),
             Tab(icon: Icon(Icons.forum_outlined), text: 'Interactions'),
             Tab(icon: Icon(Icons.task_alt_outlined), text: 'Relances'),
             Tab(icon: Icon(Icons.shopping_cart_outlined), text: 'Commandes'),
@@ -72,6 +75,7 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
         children: [
           _clientsTab(),
           const FournisseursTab(),
+          _pipelineTab(),
           _interactionsTab(),
           _tachesTab(),
           const CommandesScreen(embedded: true),
@@ -494,6 +498,179 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
           ],
         );
       },
+    );
+  }
+
+  Widget _pipelineTab() {
+    return Consumer<CrmProvider>(
+      builder: (context, provider, _) {
+        final pipeline = provider.pipeline;
+        final stages = provider.pipelineStages;
+        final sources = provider.leadSources;
+
+        return RefreshIndicator(
+          onRefresh: provider.chargerPipelineCommercial,
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Performance pipeline',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: provider.chargerPipelineCommercial,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Actualiser'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Taux de conversion: ${provider.conversionRate.toStringAsFixed(2)}%'),
+                      const SizedBox(height: 8),
+                      if (stages.isEmpty)
+                        const Text('Aucune donnée d\'etape pour le moment')
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: stages
+                              .map(
+                                (s) => Chip(
+                                  label: Text('${(s['stage'] ?? '').toString()}: ${(s['count'] ?? 0).toString()}'),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      const SizedBox(height: 8),
+                      if (sources.isNotEmpty)
+                        Text(
+                          'Sources leads: ${sources.map((s) => '${s['source']} (${s['count']})').join(' | ')}',
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (pipeline.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Aucun client dans le pipeline pour le moment.'),
+                  ),
+                )
+              else
+                ...pipeline.map((p) {
+                  final nom = '${(p['prenom'] ?? '').toString()} ${(p['nom'] ?? '').toString()}'.trim();
+                  final displayName = nom.isEmpty ? 'Client' : nom;
+                  final score = ((p['score'] ?? 0) as num).toDouble();
+                  final clientId = (p['clientId'] ?? '').toString();
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: score >= 70
+                            ? Colors.green.shade100
+                            : (score >= 40 ? Colors.orange.shade100 : Colors.red.shade100),
+                        child: Text(score.toStringAsFixed(0)),
+                      ),
+                      title: Text(displayName),
+                      subtitle: Text(
+                        'Etape: ${(p['stage'] ?? '').toString()} • Source: ${(p['sourceLead'] ?? '').toString()}\n'
+                        'Score: ${score.toStringAsFixed(2)} • Interactions: ${(p['interactionsCount'] ?? 0)} • Commandes: ${(p['commandesCount'] ?? 0)}',
+                      ),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        tooltip: 'Mettre a jour pipeline',
+                        icon: const Icon(Icons.edit),
+                        onPressed: clientId.isEmpty ? null : () => _showPipelineUpdateDialog(clientId, displayName, p),
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showPipelineUpdateDialog(String clientId, String clientName, Map<String, dynamic> current) async {
+    String stage = (current['stage'] ?? 'lead').toString();
+    final sourceLeadCtrl = TextEditingController(text: (current['sourceLead'] ?? 'inconnu').toString());
+    final scoreCtrl = TextEditingController(text: (current['score'] ?? 0).toString());
+    final noteCtrl = TextEditingController();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Pipeline - $clientName'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: stage,
+                  decoration: const InputDecoration(labelText: 'Etape'),
+                  items: const [
+                    DropdownMenuItem(value: 'lead', child: Text('Lead')),
+                    DropdownMenuItem(value: 'qualifie', child: Text('Qualifie')),
+                    DropdownMenuItem(value: 'proposition', child: Text('Proposition')),
+                    DropdownMenuItem(value: 'negociation', child: Text('Negociation')),
+                    DropdownMenuItem(value: 'gagne', child: Text('Gagne')),
+                    DropdownMenuItem(value: 'perdu', child: Text('Perdu')),
+                  ],
+                  onChanged: (v) => setDialogState(() => stage = v ?? stage),
+                ),
+                TextField(
+                  controller: sourceLeadCtrl,
+                  decoration: const InputDecoration(labelText: 'Source lead'),
+                ),
+                TextField(
+                  controller: scoreCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Score (0-100)'),
+                ),
+                TextField(
+                  controller: noteCtrl,
+                  decoration: const InputDecoration(labelText: 'Note'),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Annuler')),
+            ElevatedButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Enregistrer')),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+
+    final score = double.tryParse(scoreCtrl.text.trim());
+    final ok = await context.read<CrmProvider>().mettreAJourPipelineClient(clientId, {
+      'stage': stage,
+      'sourceLead': sourceLeadCtrl.text.trim(),
+      ...?(score == null ? null : {'score': score}),
+      'note': noteCtrl.text.trim(),
+      'auteur': 'Utilisateur',
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Pipeline mis a jour' : 'Erreur mise a jour pipeline')),
     );
   }
 

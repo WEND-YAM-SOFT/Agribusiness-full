@@ -6,10 +6,18 @@ import '../services/api_service.dart';
 class CrmProvider with ChangeNotifier {
   List<Interaction> _interactions = [];
   List<TacheCRM> _taches = [];
+  List<Map<String, dynamic>> _pipeline = [];
+  List<Map<String, dynamic>> _pipelineStages = [];
+  List<Map<String, dynamic>> _leadSources = [];
+  double _conversionRate = 0;
   bool _isLoading = false;
 
   List<Interaction> get interactions => _interactions;
   List<TacheCRM> get taches => _taches;
+  List<Map<String, dynamic>> get pipeline => _pipeline;
+  List<Map<String, dynamic>> get pipelineStages => _pipelineStages;
+  List<Map<String, dynamic>> get leadSources => _leadSources;
+  double get conversionRate => _conversionRate;
   bool get isLoading => _isLoading;
 
   Future<void> chargerInteractionsClient(String clientId) async {
@@ -89,6 +97,39 @@ class CrmProvider with ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('Erreur historique CRM: $e');
+      return false;
+    }
+  }
+
+  Future<void> chargerPipelineCommercial() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final data = await ApiService.getPipelineCommercial();
+      _pipeline = List<Map<String, dynamic>>.from(
+        (data['pipeline'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
+      );
+      _pipelineStages = List<Map<String, dynamic>>.from(
+        (data['stages'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
+      );
+      _leadSources = List<Map<String, dynamic>>.from(
+        (data['sources'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
+      );
+      _conversionRate = ((data['conversionRate'] ?? 0) as num).toDouble();
+    } catch (e) {
+      debugPrint('Erreur pipeline: $e');
+    }
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<bool> mettreAJourPipelineClient(String clientId, Map<String, dynamic> payload) async {
+    try {
+      await ApiService.mettreAJourPipelineClient(clientId, payload);
+      await chargerPipelineCommercial();
+      return true;
+    } catch (e) {
+      debugPrint('Erreur mise a jour pipeline: $e');
       return false;
     }
   }

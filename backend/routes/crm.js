@@ -4,6 +4,8 @@ const { getCompanyIdForUser } = require('../services/company_scope');
 const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
+const PIPELINE_STAGES = ['lead', 'qualifie', 'proposition', 'negociation', 'gagne', 'perdu'];
+const COMMANDES_COMPANY_COLUMNS = ['company_id', 'companyId'];
 
 function csvEscape(value) {
   const raw = value == null ? '' : String(value);
@@ -66,6 +68,56 @@ function mapTache(row, client = null, commande = null) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function safeJsonParse(value) {
+  if (!value || typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    return null;
+  }
+}
+
+function inferPipelineStage(client, commandes = []) {
+  const status = readStatus(client).toLowerCase();
+  if (commandes.some((c) => readStatus(c).toLowerCase() === 'payee')) return 'gagne';
+  if (commandes.some((c) => readStatus(c).toLowerCase() === 'annulee')) return 'perdu';
+  if (commandes.some((c) => ['en_attente', 'confirmee', 'en_preparation'].includes(readStatus(c).toLowerCase()))) {
+    return 'negociation';
+  }
+  if (status === 'actif') return 'qualifie';
+  if (status === 'inactif') return 'perdu';
+  return 'lead';
+}
+
+function inferScore(client, interactionsCount, commandes = []) {
+  const ca = Number(client?.chiffre_affaires_cumul || client?.chiffreAffairesCumul || 0);
+  const scoreInteractions = Math.min(30, interactionsCount * 3);
+  const scoreCommandes = Math.min(40, commandes.length * 8);
+  const scoreCa = Math.min(30, Math.floor(ca / 50000));
+  return Math.max(0, Math.min(100, scoreInteractions + scoreCommandes + scoreCa));
+}
+
+async function getCommandesCompat(api, companyId) {
+  let lastError = null;
+  for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+    const result = await api
+      .from('commandes')
+      .select('id,client_id,statut,status,montant_total')
+      .eq(companyColumn, companyId);
+    if (!result.error) return { data: result.data || [], error: null };
+
+    const message = (result.error.message || '').toString();
+    const match = message.match(/Could not find the '([^']+)' column/i);
+    const missing = match?.[1] || '';
+    if (missing === companyColumn) {
+      lastError = result.error;
+      continue;
+    }
+    return { data: [], error: result.error };
+  }
+  return { data: [], error: lastError };
 }
 
 router.get('/dashboard', requirePermission('crm.read'), async (req, res) => {
@@ -149,6 +201,164 @@ router.get('/dashboard', requirePermission('crm.read'), async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/pipeline', requirePermission('crm.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const clientsRes = await api.from('clients').select('*').eq('company_id', companyId);
+    if (clientsRes.error) return res.status(500).json({ message: clientsRes.error.message });
+    const clients = clientsRes.data || [];
+
+    const commandesRes = await getCommandesCompat(api, companyId);
+    if (commandesRes.error) return res.status(500).json({ message: commandesRes.error.message });
+    const commandes = commandesRes.data || [];
+
+    const interactionsRes = await api
+      .from('crm_interactions')
+      .select('id,client_id,type,date_interaction,contenu,updated_at')
+      .eq('company_id', companyId)
+      .order('date_interaction', { ascending: false });
+    if (interactionsRes.error) return res.status(500).json({ message: interactionsRes.error.message });
+    const interactions = interactionsRes.data || [];
+
+    const commandesByClient = new Map();
+    for (const c of commandes) {
+      const clientId = c.client_id ? String(c.client_id) : null;
+      if (!clientId) continue;
+      const list = commandesByClient.get(clientId) || [];
+      list.push(c);
+      commandesByClient.set(clientId, list);
+    }
+
+    const interactionsByClient = new Map();
+    const latestPipelineMeta = new Map();
+    for (const i of interactions) {
+      const clientId = i.client_id ? String(i.client_id) : null;
+      if (!clientId) continue;
+      interactionsByClient.set(clientId, (interactionsByClient.get(clientId) || 0) + 1);
+      if (i.type === 'pipeline_update' && !latestPipelineMeta.has(clientId)) {
+        const parsed = safeJsonParse(i.contenu);
+        latestPipelineMeta.set(clientId, parsed || {});
+      }
+    }
+
+    const stageCount = new Map(PIPELINE_STAGES.map((s) => [s, 0]));
+    const sourceCount = new Map();
+
+    const pipeline = clients.map((client) => {
+      const clientId = String(client.id);
+      const clientCommandes = commandesByClient.get(clientId) || [];
+      const interactionCount = interactionsByClient.get(clientId) || 0;
+      const meta = latestPipelineMeta.get(clientId) || {};
+      const stage = PIPELINE_STAGES.includes(meta.stage) ? meta.stage : inferPipelineStage(client, clientCommandes);
+      const sourceLead = (meta.sourceLead || '').toString().trim() || 'inconnu';
+      const score = Number.isFinite(Number(meta.score))
+        ? Math.max(0, Math.min(100, Number(meta.score)))
+        : inferScore(client, interactionCount, clientCommandes);
+      const ca = Number(client.chiffre_affaires_cumul || client.chiffreAffairesCumul || 0);
+
+      stageCount.set(stage, (stageCount.get(stage) || 0) + 1);
+      sourceCount.set(sourceLead, (sourceCount.get(sourceLead) || 0) + 1);
+
+      return {
+        clientId: client.id,
+        nom: client.nom || '',
+        prenom: client.prenom || '',
+        telephone: client.telephone || '',
+        statut: readStatus(client) || 'prospect',
+        stage,
+        sourceLead,
+        score: Number(score.toFixed(2)),
+        interactionsCount: interactionCount,
+        commandesCount: clientCommandes.length,
+        chiffreAffairesCumul: Number(ca.toFixed(2)),
+      };
+    });
+
+    const total = pipeline.length;
+    const won = stageCount.get('gagne') || 0;
+    const conversionRate = total > 0 ? (won / total) * 100 : 0;
+
+    const stages = PIPELINE_STAGES.map((stage) => ({
+      stage,
+      count: stageCount.get(stage) || 0,
+    }));
+
+    const sources = Array.from(sourceCount.entries())
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return res.json({
+      pipeline,
+      stages,
+      sources,
+      conversionRate: Number(conversionRate.toFixed(2)),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.post('/pipeline/:clientId', requirePermission('crm.interaction.create'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const stage = (req.body.stage || '').toString().trim().toLowerCase();
+    if (!PIPELINE_STAGES.includes(stage)) {
+      return res.status(400).json({ message: 'Etape pipeline invalide' });
+    }
+
+    const score = Number(req.body.score);
+    const normalizedScore = Number.isNaN(score) ? null : Math.max(0, Math.min(100, score));
+    const sourceLead = (req.body.sourceLead || '').toString().trim() || 'inconnu';
+    const note = (req.body.note || '').toString().trim();
+
+    const clientRes = await api
+      .from('clients')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('id', req.params.clientId)
+      .maybeSingle();
+    if (clientRes.error) return res.status(400).json({ message: clientRes.error.message });
+    if (!clientRes.data) return res.status(404).json({ message: 'Client non trouvé' });
+
+    const payload = {
+      company_id: companyId,
+      client_id: req.params.clientId,
+      commande_id: null,
+      type: 'pipeline_update',
+      sujet: `Pipeline: ${stage}`,
+      contenu: JSON.stringify({
+        stage,
+        sourceLead,
+        score: normalizedScore,
+        note,
+      }),
+      auteur: req.body.auteur || 'Utilisateur',
+      date_interaction: new Date().toISOString(),
+      pieces_jointes: [],
+      updated_at: new Date().toISOString(),
+    };
+
+    const saved = await api.from('crm_interactions').insert(payload).select('*').single();
+    if (saved.error) return res.status(400).json({ message: saved.error.message });
+
+    return res.status(201).json({
+      clientId: req.params.clientId,
+      stage,
+      sourceLead,
+      score: normalizedScore,
+      note,
+      interactionId: saved.data.id,
+      updatedAt: saved.data.updated_at,
+    });
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
   }
 });
 
