@@ -23,6 +23,25 @@ class ApiService {
     return http.get(uri, headers: _headers());
   }
 
+    static Future<String> _getCsv(String path, {Map<String, String>? query}) async {
+        final response = await _get(path, query: query);
+        if (response.statusCode == 200) {
+            return response.body;
+        }
+
+        dynamic data;
+        try {
+            data = _decode(response);
+        } catch (_) {
+            data = null;
+        }
+
+        if (data is Map && data['message'] != null) {
+            throw Exception(data['message'].toString());
+        }
+        throw Exception('Erreur API (${response.statusCode})');
+    }
+
   static Future<http.Response> _post(String path, {Map<String, dynamic>? body}) {
     return http.post(
       Uri.parse('$baseUrl$path'),
@@ -80,6 +99,9 @@ class ApiService {
 
   static Future<List<dynamic>> getBandesHistorique() async =>
       List<dynamic>.from(_ensureSuccess(await _get('/bandes/historique')) ?? []);
+
+  static Future<String> exportBandesHistoriqueCsv() async =>
+      _getCsv('/bandes/historique/export.csv');
 
   static Future<Map<String, dynamic>> creerBande(Map<String, dynamic> data) async =>
       Map<String, dynamic>.from(_ensureSuccess(await _post('/bandes', body: data), accepted: const [201]));
@@ -201,8 +223,14 @@ class ApiService {
   static Future<List<dynamic>> getHistoriqueAlertes() async =>
       List<dynamic>.from(_ensureSuccess(await _get('/alertes/historique')) ?? []);
 
+  static Future<String> exportHistoriqueAlertesCsv() async =>
+      _getCsv('/alertes/historique/export.csv');
+
   static Future<List<dynamic>> getHistoriqueAlertesAutomatiques() async =>
       List<dynamic>.from(_ensureSuccess(await _get('/alertes/automatiques/historique')) ?? []);
+
+  static Future<String> exportHistoriqueAlertesAutomatiquesCsv() async =>
+      _getCsv('/alertes/automatiques/historique/export.csv');
 
   static Future<List<dynamic>> getAlertesRetard() async =>
       List<dynamic>.from(_ensureSuccess(await _get('/alertes/retard')) ?? []);
@@ -286,6 +314,9 @@ class ApiService {
   static Future<Map<String, dynamic>> getHistoriqueCommande(String commandeId) async =>
       Map<String, dynamic>.from(_ensureSuccess(await _get('/commandes/historique/$commandeId')));
 
+  static Future<String> exportHistoriqueCommandesCsv() async =>
+      _getCsv('/commandes/historique/export.csv');
+
     static Future<void> effacerHistoriqueCommandes() async {
         _ensureSuccess(await _delete('/commandes/historique/all'));
     }
@@ -327,6 +358,28 @@ class ApiService {
         _ensureSuccess(await _delete('/finance/mouvements'));
     }
 
+    static Future<String> exportHistoriqueMouvementsTresorerieCsv({
+        String? period,
+        String? source,
+        List<String>? sources,
+        List<int>? weekdays,
+        int? month,
+        int? year,
+        DateTime? dateFrom,
+        DateTime? dateTo,
+    }) async {
+        final query = <String, String>{};
+        if (period != null && period.isNotEmpty) query['period'] = period;
+        if (source != null && source.isNotEmpty) query['source'] = source;
+        if (sources != null && sources.isNotEmpty) query['sources'] = sources.join(',');
+        if (weekdays != null && weekdays.isNotEmpty) query['weekdays'] = weekdays.join(',');
+        if (month != null && month >= 1 && month <= 12) query['month'] = '$month';
+        if (year != null && year > 0) query['year'] = '$year';
+        if (dateFrom != null) query['dateFrom'] = dateFrom.toIso8601String();
+        if (dateTo != null) query['dateTo'] = dateTo.toIso8601String();
+        return _getCsv('/finance/mouvements/export.csv', query: query);
+    }
+
   // CRM
   static Future<Map<String, dynamic>> getCrmDashboard() async =>
       Map<String, dynamic>.from(_ensureSuccess(await _get('/crm/dashboard')));
@@ -353,6 +406,9 @@ class ApiService {
     static Future<void> effacerHistoriqueTachesCrm() async {
         _ensureSuccess(await _delete('/crm/taches/historique/all'));
     }
+
+    static Future<String> exportHistoriqueTachesCrmCsv() async =>
+            _getCsv('/crm/taches/historique/export.csv');
 
   // Dashboard / Reports
     static Future<Map<String, dynamic>> getGlobalDashboard({String period = 'mois', String? bandeId, String? batiment}) async =>

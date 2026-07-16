@@ -5,6 +5,15 @@ const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
+function csvEscape(value) {
+  const raw = value == null ? '' : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows) {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
 function isMissingCategorieColumnError(error) {
   const message = (error?.message || '').toString().toLowerCase();
   return message.includes("could not find the 'categorie' column")
@@ -220,6 +229,118 @@ router.get('/mouvements', requirePermission('finance.read'), async (req, res) =>
 
     const filtered = (data || []).filter((row) => inWeekdays(row.date_mouvement, weekdays));
     return res.json(filtered.map(mapMouvement));
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/mouvements/export.csv', requirePermission('finance.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const source = (req.query.source || '').toString().trim();
+    const sourcesRaw = (req.query.sources || '').toString().trim();
+    const period = (req.query.period || '').toString().trim().toLowerCase();
+    const year = Number((req.query.year || '').toString().trim());
+    const month = Number((req.query.month || '').toString().trim());
+    const dateFromRaw = (req.query.dateFrom || '').toString().trim();
+    const dateToRaw = (req.query.dateTo || '').toString().trim();
+    const weekdays = (req.query.weekdays || '')
+      .toString()
+      .split(',')
+      .map((w) => Number(w.trim()))
+      .filter((w) => !Number.isNaN(w) && w >= 1 && w <= 7);
+
+    let fromDate = null;
+    let toDate = null;
+    const now = new Date();
+
+    if (period === 'semaine' || period === 'mois' || period === 'annee') {
+      if (period === 'semaine') {
+        const start = new Date(now);
+        const day = start.getDay();
+        const diffToMonday = day === 0 ? 6 : day - 1;
+        start.setDate(start.getDate() - diffToMonday);
+        start.setHours(0, 0, 0, 0);
+        fromDate = start;
+      } else if (period === 'mois') {
+        fromDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      } else {
+        fromDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      }
+    }
+
+    if (!Number.isNaN(year) && year >= 2000 && year <= 2100) {
+      if (!Number.isNaN(month) && month >= 1 && month <= 12) {
+        fromDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        toDate = new Date(year, month, 0, 23, 59, 59, 999);
+      } else {
+        fromDate = new Date(year, 0, 1, 0, 0, 0, 0);
+        toDate = new Date(year, 11, 31, 23, 59, 59, 999);
+      }
+    }
+
+    if (dateFromRaw) {
+      const dateFrom = new Date(dateFromRaw);
+      if (!Number.isNaN(dateFrom.getTime())) {
+        dateFrom.setHours(0, 0, 0, 0);
+        fromDate = dateFrom;
+      }
+    }
+
+    if (dateToRaw) {
+      const dateTo = new Date(dateToRaw);
+      if (!Number.isNaN(dateTo.getTime())) {
+        dateTo.setHours(23, 59, 59, 999);
+        toDate = dateTo;
+      }
+    }
+
+    let query = api
+      .from('tresorerie_mouvements')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('date_mouvement', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (fromDate) query = query.gte('date_mouvement', fromDate.toISOString());
+    if (toDate) query = query.lte('date_mouvement', toDate.toISOString());
+
+    if (sourcesRaw) {
+      const sourceList = sourcesRaw.split(',').map((s) => s.trim()).filter(Boolean);
+      if (sourceList.length > 0) query = query.in('source', sourceList);
+    } else if (source) {
+      query = query.eq('source', source);
+    }
+
+    const { data, error } = await query.limit(5000);
+    if (error) return res.status(500).json({ message: error.message });
+
+    const filtered = (data || []).filter((row) => inWeekdays(row.date_mouvement, weekdays)).map(mapMouvement);
+    const header = [
+      'id', 'nature', 'source', 'qui_nom', 'qui_prenom', 'categorie', 'type', 'montant', 'date', 'commentaire', 'reference_type', 'reference_id', 'created_at',
+    ];
+    const rows = filtered.map((m) => [
+      m._id,
+      m.nature,
+      m.source,
+      m.quiNom,
+      m.quiPrenom,
+      m.categorie,
+      m.type,
+      m.montant,
+      m.date,
+      m.commentaire,
+      m.referenceType,
+      m.referenceId,
+      m.createdAt,
+    ]);
+
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="finance_mouvements_${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.status(200).send(csv);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

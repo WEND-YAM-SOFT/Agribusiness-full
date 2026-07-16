@@ -7,6 +7,8 @@ import '../providers/clients_provider.dart';
 import '../providers/crm_provider.dart';
 import 'fournisseurs_tab.dart';
 import 'commandes_screen.dart';
+import '../services/api_service.dart';
+import '../utils/csv_export.dart';
 import '../utils/money_format.dart';
 import '../widgets/iso_calendar_picker.dart';
 import '../widgets/international_phone_field.dart';
@@ -514,6 +516,21 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
               child: Row(
                 children: [
                   const Expanded(child: Text('Tâches et relances commerciales')),
+                  if (tachesHistorique.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: () => exportCsvToClipboard(
+                        context,
+                        loader: ApiService.exportHistoriqueTachesCrmCsv,
+                        label: 'Historique relances CRM',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: const Text('Exporter CSV'),
+                    ),
+                  if (tachesHistorique.isNotEmpty) const SizedBox(width: 8),
                   if (tachesHistorique.isNotEmpty)
                     OutlinedButton.icon(
                       onPressed: () => context.read<CrmProvider>().effacerHistoriqueTaches(),

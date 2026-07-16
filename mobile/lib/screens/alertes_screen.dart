@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/alertes_provider.dart';
 import '../models/alerte.dart';
+import '../services/api_service.dart';
+import '../utils/csv_export.dart';
 import '../widgets/iso_calendar_picker.dart';
 
 class AlertesScreen extends StatefulWidget {
@@ -174,10 +176,25 @@ class _AlertesScreenState extends State<AlertesScreen> {
               if (historique.isNotEmpty)
                 Align(
                   alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    onPressed: () => context.read<AlertesProvider>().effacerHistorique(),
-                    icon: const Icon(Icons.delete_sweep),
-                    label: const Text('Effacer historique'),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => exportCsvToClipboard(
+                          context,
+                          loader: ApiService.exportHistoriqueAlertesCsv,
+                          label: 'Historique alertes',
+                        ),
+                        icon: const Icon(Icons.download_outlined),
+                        label: const Text('Exporter CSV'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => context.read<AlertesProvider>().effacerHistorique(),
+                        icon: const Icon(Icons.delete_sweep),
+                        label: const Text('Effacer historique'),
+                      ),
+                    ],
                   ),
                 ),
               if (historique.isNotEmpty) const SizedBox(height: 8),

@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import '../providers/bandes_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/bande.dart';
+import '../services/api_service.dart';
 import 'suivi_screen.dart';
 import 'bande_dashboard_screen.dart';
+import '../utils/csv_export.dart';
 import '../widgets/iso_calendar_picker.dart';
 
 class BandesScreen extends StatefulWidget {
@@ -103,12 +105,24 @@ class _BandesScreenState extends State<BandesScreen> with SingleTickerProviderSt
             child: Text('Aucune bande dans l\'historique', style: TextStyle(color: Colors.grey)),
           );
         }
-        return ListView.builder(
+        return ListView(
           padding: const EdgeInsets.all(16),
-          itemCount: provider.bandesHistorique.length,
-          itemBuilder: (context, index) {
-            return _buildBandeCard(provider.bandesHistorique[index], active: false);
-          },
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: () => exportCsvToClipboard(
+                  context,
+                  loader: ApiService.exportBandesHistoriqueCsv,
+                  label: 'Historique bandes',
+                ),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Exporter CSV'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...provider.bandesHistorique.map((bande) => _buildBandeCard(bande, active: false)),
+          ],
         );
       },
     );

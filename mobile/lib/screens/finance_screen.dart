@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/finance_provider.dart';
 import '../services/api_service.dart';
+import '../utils/csv_export.dart';
 import '../utils/money_format.dart';
 import '../widgets/iso_calendar_picker.dart';
 
@@ -144,6 +145,23 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     const Expanded(
                       child: Text('Mouvements de tresorerie', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ),
+                    OutlinedButton.icon(
+                      onPressed: () => exportCsvToClipboard(
+                        context,
+                        loader: () => ApiService.exportHistoriqueMouvementsTresorerieCsv(
+                          sources: provider.sourceFilters.toList(),
+                          weekdays: provider.weekdayFilters.toList(),
+                          month: provider.monthFilter,
+                          year: provider.yearFilter,
+                          dateFrom: provider.dateFrom,
+                          dateTo: provider.dateTo,
+                        ),
+                        label: 'Mouvements tresorerie',
+                      ),
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('Exporter CSV'),
+                    ),
+                    const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: () async {
                         final financeProvider = context.read<FinanceProvider>();

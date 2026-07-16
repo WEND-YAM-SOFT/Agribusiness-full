@@ -5,6 +5,15 @@ const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
+function csvEscape(value) {
+  const raw = value == null ? '' : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows) {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
 function readStatus(row) {
   return (row?.statut || row?.status || '').toString();
 }
@@ -307,6 +316,55 @@ router.delete('/taches/historique/all', requirePermission('crm.historique.purge'
     const deleted = await api.from('crm_taches').delete().eq('company_id', companyId).in('statut', ['terminee', 'annulee']);
     if (deleted.error) return res.status(500).json({ message: deleted.error.message });
     return res.json({ message: 'Historique CRM supprimé', deletedCount: 0 });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/taches/historique/export.csv', requirePermission('crm.tache.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const tachesRes = await api
+      .from('crm_taches')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('statut', ['terminee', 'annulee'])
+      .order('updated_at', { ascending: false });
+    if (tachesRes.error) return res.status(500).json({ message: tachesRes.error.message });
+
+    const clientIds = [...new Set((tachesRes.data || []).map((t) => t.client_id).filter(Boolean))];
+    let clientMap = new Map();
+    if (clientIds.length) {
+      const clients = await api.from('clients').select('id,nom,prenom').eq('company_id', companyId).in('id', clientIds);
+      if (!clients.error) clientMap = new Map((clients.data || []).map((c) => [c.id, c]));
+    }
+
+    const header = [
+      'id', 'titre', 'description', 'type', 'priorite', 'statut', 'date_echeance', 'client', 'assigne_a', 'updated_at',
+    ];
+    const rows = (tachesRes.data || []).map((t) => {
+      const cl = t.client_id ? clientMap.get(t.client_id) : null;
+      const clientNom = cl ? `${cl.prenom || ''} ${cl.nom || ''}`.trim() : '';
+      return [
+        t.id,
+        t.titre || '',
+        t.description || '',
+        t.type || '',
+        t.priorite || '',
+        t.statut || '',
+        t.date_echeance || '',
+        clientNom,
+        t.assigne_a || '',
+        t.updated_at || '',
+      ];
+    });
+
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="crm_taches_historique_${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.status(200).send(csv);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

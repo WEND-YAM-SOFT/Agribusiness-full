@@ -5,6 +5,15 @@ const { requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
+function csvEscape(value) {
+  const raw = value == null ? '' : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows) {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
 function readStatus(row) {
   return (row?.statut || row?.status || '').toString();
 }
@@ -335,6 +344,94 @@ router.get('/automatiques/historique', requirePermission('alertes.read'), async 
     if (result.error) return res.status(500).json({ message: result.error.message });
     const bandeMap = await getBandeNameMap(api, companyId);
     return res.json((result.data || []).map((row) => mapAlerteRow(row, bandeMap)));
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/historique/export.csv', requirePermission('alertes.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const result = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('statut', ['faite', 'ignoree'])
+      .eq('automatique', false)
+      .order('updated_at', { ascending: false })
+      .order('date_echeance', { ascending: false });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    const bandeMap = await getBandeNameMap(api, companyId);
+    const mapped = (result.data || []).map((row) => mapAlerteRow(row, bandeMap));
+
+    const header = [
+      'id', 'titre', 'message', 'type', 'priorite', 'statut', 'source', 'automatique', 'date_echeance', 'bande', 'updated_at',
+    ];
+    const rows = mapped.map((a) => [
+      a._id,
+      a.titre,
+      a.message,
+      a.type,
+      a.priorite,
+      a.statut,
+      a.source,
+      a.automatique,
+      a.dateEcheance,
+      typeof a.bandeId === 'object' ? (a.bandeId?.nom || '') : (a.bandeId || ''),
+      a.updatedAt,
+    ]);
+
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="alertes_historique_${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.status(200).send(csv);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/automatiques/historique/export.csv', requirePermission('alertes.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+
+    const result = await api
+      .from('alertes')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('statut', ['faite', 'ignoree'])
+      .eq('automatique', true)
+      .order('updated_at', { ascending: false })
+      .order('date_echeance', { ascending: false });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+    const bandeMap = await getBandeNameMap(api, companyId);
+    const mapped = (result.data || []).map((row) => mapAlerteRow(row, bandeMap));
+
+    const header = [
+      'id', 'titre', 'message', 'type', 'priorite', 'statut', 'source', 'automatique', 'date_echeance', 'bande', 'updated_at',
+    ];
+    const rows = mapped.map((a) => [
+      a._id,
+      a.titre,
+      a.message,
+      a.type,
+      a.priorite,
+      a.statut,
+      a.source,
+      a.automatique,
+      a.dateEcheance,
+      typeof a.bandeId === 'object' ? (a.bandeId?.nom || '') : (a.bandeId || ''),
+      a.updatedAt,
+    ]);
+
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="alertes_automatiques_historique_${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.status(200).send(csv);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

@@ -6,6 +6,7 @@ import '../providers/clients_provider.dart';
 import '../models/commande.dart';
 import '../services/api_service.dart';
 import '../utils/money_format.dart';
+import '../utils/csv_export.dart';
 import '../widgets/iso_calendar_picker.dart';
 import '../widgets/international_phone_field.dart';
 
@@ -194,13 +195,25 @@ class _CommandesScreenState extends State<CommandesScreen> {
                               children: [
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _showEffacerHistoriqueCommandesDialog(),
-                                      icon: const Icon(Icons.delete_sweep),
-                                      label: const Text('Effacer historique'),
-                                    ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () => exportCsvToClipboard(
+                                          context,
+                                          loader: ApiService.exportHistoriqueCommandesCsv,
+                                          label: 'Historique commandes',
+                                        ),
+                                        icon: const Icon(Icons.download_outlined),
+                                        label: const Text('Exporter CSV'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      OutlinedButton.icon(
+                                        onPressed: () => _showEffacerHistoriqueCommandesDialog(),
+                                        icon: const Icon(Icons.delete_sweep),
+                                        label: const Text('Effacer historique'),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 Padding(

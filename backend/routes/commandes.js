@@ -8,6 +8,15 @@ const router = express.Router();
 const COMMANDES_COMPANY_COLUMNS = ['company_id', 'companyId'];
 const ALLOWED_COMMANDE_STATUTS = new Set(['en_attente', 'confirmee', 'en_preparation', 'payee', 'annulee']);
 
+function csvEscape(value) {
+  const raw = value == null ? '' : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows) {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
 function isCommandeHistorique(row) {
   return ((row?.statut || row?.status || '').toString()) === 'payee';
 }
@@ -904,6 +913,69 @@ router.post('/:id/commentaires', requirePermission('commandes.comment'), async (
     return res.status(201).json(mapCommandeRow(saved.data, null));
   } catch (err) {
     return res.status(400).json({ message: err.message });
+  }
+});
+
+router.get('/historique/export.csv', requirePermission('commandes.historique.read'), async (req, res) => {
+  try {
+    const apiClient = getAdminClient();
+    const companyId = await getCompanyIdForUser(apiClient, req.user.id || req.user._id);
+
+    let data = [];
+    let lastError = null;
+    for (const companyColumn of COMMANDES_COMPANY_COLUMNS) {
+      const result = await apiClient
+        .from('commandes')
+        .select('*')
+        .eq(companyColumn, companyId)
+        .order('updated_at', { ascending: false });
+
+      if (!result.error) {
+        data = result.data || [];
+        lastError = null;
+        break;
+      }
+
+      const missing = extractMissingColumn(result.error);
+      if (missing === companyColumn) {
+        lastError = result.error;
+        continue;
+      }
+
+      return res.status(500).json({ message: result.error.message });
+    }
+
+    if (lastError && !data.length) {
+      return res.status(500).json({ message: lastError.message });
+    }
+
+    const historiques = data.filter((row) => isCommandeHistorique(row));
+    const header = [
+      'id', 'client_id', 'bande_id', 'statut', 'montant_total', 'date_livraison', 'nombre_produits', 'nombre_livraisons', 'notes', 'updated_at',
+    ];
+    const rows = historiques.map((row) => {
+      const produits = toArray(row.produits || row.produit || row.products || row.items);
+      const livraisons = readLivraisons(row);
+      return [
+        row.id,
+        row.client_id || row.clientId || '',
+        row.bande_id || row.bandeId || '',
+        row.statut || row.status || '',
+        computeCommandeTotal(row),
+        row.date_livraison || row.dateLivraison || '',
+        produits.length,
+        livraisons.length,
+        row.notes || '',
+        row.updated_at || row.updatedAt || '',
+      ];
+    });
+
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="commandes_historique_${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.status(200).send(csv);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
 });
 

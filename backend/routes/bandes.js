@@ -6,6 +6,15 @@ const { requireRole, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
+function csvEscape(value) {
+  const raw = value == null ? '' : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows) {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
 function isMissingCategorieColumnError(error) {
   const message = (error?.message || '').toString().toLowerCase();
   return message.includes("could not find the 'categorie' column")
@@ -284,6 +293,59 @@ router.get('/historique', requirePermission('bandes.read'), async (req, res) => 
     const result = await api.from('bandes').select('*').eq('company_id', companyId).eq('statut', 'fermee').order('date_fermeture', { ascending: false });
     if (result.error) return res.status(500).json({ message: result.error.message });
     return res.json((result.data || []).map(mapBandeRow));
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/historique/export.csv', requirePermission('bandes.read'), async (req, res) => {
+  try {
+    const api = getAdminClient();
+    const companyId = await getCompanyIdForUser(api, req.user.id || req.user._id);
+    const result = await api
+      .from('bandes')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('statut', 'fermee')
+      .order('date_fermeture', { ascending: false });
+
+    if (result.error) return res.status(500).json({ message: result.error.message });
+
+    const header = [
+      'id',
+      'nom',
+      'statut',
+      'batiment',
+      'nombre_initial',
+      'nombre_actuel',
+      'mortalite_totale',
+      'taux_mortalite',
+      'date_ouverture',
+      'date_fermeture',
+      'updated_at',
+    ];
+
+    const rows = (result.data || []).map((row) => {
+      const bande = mapBandeRow(row);
+      return [
+        bande._id,
+        bande.nom,
+        bande.statut,
+        bande.batiment,
+        bande.nombreInitial,
+        bande.nombreActuel,
+        bande.mortaliteTotale,
+        bande.tauxMortalite,
+        bande.dateOuverture,
+        bande.dateFermeture,
+        bande.updatedAt,
+      ];
+    });
+
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="bandes_historique_${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.status(200).send(csv);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
