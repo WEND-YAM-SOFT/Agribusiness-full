@@ -630,6 +630,21 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
       child: BarChart(
         BarChartData(
           gridData: const FlGridData(show: true),
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final i = group.x.toInt();
+                if (i < 0 || i >= stageOrder.length) return null;
+                final stage = stageOrder[i];
+                final count = values[i];
+                return BarTooltipItem(
+                  '$stage\n${count.toStringAsFixed(0)} client(s)',
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                );
+              },
+            ),
+          ),
           titlesData: FlTitlesData(
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -682,6 +697,21 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
       child: BarChart(
         BarChartData(
           gridData: const FlGridData(show: true),
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final i = group.x.toInt();
+                if (i < 0 || i >= subset.length) return null;
+                final source = (subset[i]['source'] ?? '').toString();
+                final count = ((subset[i]['count'] ?? 0) as num).toDouble();
+                return BarTooltipItem(
+                  '$source\n${count.toStringAsFixed(0)} lead(s)',
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                );
+              },
+            ),
+          ),
           titlesData: FlTitlesData(
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),

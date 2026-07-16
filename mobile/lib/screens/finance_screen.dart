@@ -317,6 +317,21 @@ class _FinanceScreenState extends State<FinanceScreen> {
       child: BarChart(
         BarChartData(
           gridData: const FlGridData(show: true),
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final i = group.x.toInt();
+                if (i < 0 || i >= rows.length) return null;
+                final name = (rows[i]['bandeNom'] ?? '').toString();
+                final marge = ((rows[i]['marge'] ?? 0) as num);
+                return BarTooltipItem(
+                  '$name\nMarge: ${formatAmountFcfa(marge)}',
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                );
+              },
+            ),
+          ),
           titlesData: FlTitlesData(
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -365,6 +380,25 @@ class _FinanceScreenState extends State<FinanceScreen> {
           child: LineChart(
             LineChartData(
               gridData: const FlGridData(show: true),
+              lineTouchData: LineTouchData(
+                enabled: true,
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipItems: (touchedSpots) {
+                    return touchedSpots.map((spot) {
+                      final i = spot.x.toInt();
+                      if (i < 0 || i >= parsed.length) {
+                        return const LineTooltipItem('', TextStyle());
+                      }
+                      final month = (parsed[i]['mois'] ?? '').toString();
+                      final value = ((parsed[i]['soldeProjete'] ?? 0) as num);
+                      return LineTooltipItem(
+                        '$month\n${formatAmountFcfa(value)}',
+                        const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      );
+                    }).toList();
+                  },
+                ),
+              ),
               titlesData: FlTitlesData(
                 rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -396,6 +430,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ],
             ),
           ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          children: const [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.circle, size: 10, color: Colors.blue),
+                SizedBox(width: 4),
+                Text('Solde projete'),
+              ],
+            ),
+          ],
         ),
       ],
     );
