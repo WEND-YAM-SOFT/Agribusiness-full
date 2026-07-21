@@ -415,8 +415,15 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
                 if (!mounted) return;
                 navigator.pop();
+                final errorDetail = clientsProvider.lastError;
                 messenger.showSnackBar(
-                  SnackBar(content: Text(ok ? (isEdit ? 'Client modifié' : 'Client ajouté') : 'Erreur modification client, vérifie les champs saisis')),
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? (isEdit ? 'Client modifié' : 'Client ajouté')
+                          : 'Erreur ${isEdit ? 'modification' : 'création'} client${errorDetail != null && errorDetail.isNotEmpty ? ': $errorDetail' : ''}',
+                    ),
+                  ),
                 );
               },
               child: Text(isEdit ? 'Enregistrer' : 'Ajouter'),

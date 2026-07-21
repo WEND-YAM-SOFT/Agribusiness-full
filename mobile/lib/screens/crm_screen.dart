@@ -283,8 +283,15 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                   'statut': statut,
                 });
                 navigator.pop();
+                final errorDetail = clientsProvider.lastError;
                 messenger.showSnackBar(
-                  SnackBar(content: Text(ok ? 'Client ajouté' : 'Erreur lors de la création')),
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? 'Client ajouté'
+                          : 'Erreur lors de la création${errorDetail != null && errorDetail.isNotEmpty ? ': $errorDetail' : ''}',
+                    ),
+                  ),
                 );
                 if (ok) {
                   await clientsProvider.chargerClientsPourCrm();
@@ -389,8 +396,15 @@ class _CrmScreenState extends State<CrmScreen> with SingleTickerProviderStateMix
                 });
 
                 navigator.pop();
+                final errorDetail = clientsProvider.lastError;
                 messenger.showSnackBar(
-                  SnackBar(content: Text(ok ? 'Client modifié' : 'Erreur modification client')),
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? 'Client modifié'
+                          : 'Erreur modification client${errorDetail != null && errorDetail.isNotEmpty ? ': $errorDetail' : ''}',
+                    ),
+                  ),
                 );
                 if (ok) {
                   await clientsProvider.chargerClientsPourCrm();

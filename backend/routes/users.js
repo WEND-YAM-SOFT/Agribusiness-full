@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { getAdminClient, mapRole, mergeFullName, toPublicUser, logAudit } = require('../services/supabase');
-const { getRolePermissions } = require('../config/permissions');
+const { getRolePermissions, getEffectivePermissions } = require('../config/permissions');
 
 const router = express.Router();
 
@@ -20,11 +20,14 @@ function toPublic(profile, authUser) {
   const metadata = authUser?.user_metadata || {};
   const sqlPermissions = Array.isArray(profile?.permissions) ? profile.permissions : [];
   const authPermissions = Array.isArray(metadata.permissions) ? metadata.permissions : [];
+  const customPermissions = sqlPermissions.length ? sqlPermissions : authPermissions;
   return toPublicUser({
     ...profile,
     email: authUser?.email || '',
     telephone: metadata.telephone || '',
-    permissions: sqlPermissions.length ? sqlPermissions : authPermissions,
+    // Always merge role defaults so the admin panel and mobile app reflect the
+    // actual effective permission set, even if it was never explicitly seeded.
+    permissions: getEffectivePermissions(profile?.role, customPermissions),
     actif: metadata.actif !== false,
     must_change_password: metadata.mustChangePassword === true,
     derniere_connexion_at: metadata.derniereConnexionAt || null,

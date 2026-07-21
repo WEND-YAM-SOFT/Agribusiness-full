@@ -13,11 +13,13 @@ class ClientsProvider with ChangeNotifier {
   bool _filtresRestaures = false;
   String _searchQuery = '';
   String _crmStatut = '';
+  String? _lastError;
 
   List<Client> get clients => _clients;
   bool get isLoading => _isLoading;
   String get searchQuery => _searchQuery;
   String? get crmStatutFilter => _crmStatut.isEmpty ? null : _crmStatut;
+  String? get lastError => _lastError;
 
   Future<void> ensureFiltresRestaures() async {
     if (_filtresRestaures) return;
@@ -108,44 +110,56 @@ class ClientsProvider with ChangeNotifier {
 
   Future<bool> ajouterClient(Map<String, dynamic> data) async {
     try {
+      _lastError = null;
       await ApiService.creerClient(data);
       await chargerClients();
       return true;
     } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '');
       debugPrint('Erreur: $e');
+      notifyListeners();
       return false;
     }
   }
 
   Future<String?> ajouterClientEtRetourId(Map<String, dynamic> data) async {
     try {
+      _lastError = null;
       final created = await ApiService.creerClient(data);
       await chargerClients();
       return created['_id']?.toString();
     } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '');
       debugPrint('Erreur: $e');
+      notifyListeners();
       return null;
     }
   }
 
   Future<bool> mettreAJourClient(String id, Map<String, dynamic> data) async {
     try {
+      _lastError = null;
       await ApiService.mettreAJourClient(id, data);
       await chargerClients();
       return true;
     } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '');
       debugPrint('Erreur: $e');
+      notifyListeners();
       return false;
     }
   }
 
   Future<bool> supprimerClient(String id) async {
     try {
+      _lastError = null;
       await ApiService.supprimerClient(id);
       await appliquerRecherchePersistante();
       return true;
     } catch (e) {
+      _lastError = e.toString().replaceFirst('Exception: ', '');
       debugPrint('Erreur: $e');
+      notifyListeners();
       return false;
     }
   }

@@ -87,9 +87,20 @@ function getRolePermissions(role) {
   return DEFAULT_ROLE_PERMISSIONS[normalizedRole] || [];
 }
 
+// Effective permissions = role defaults ∪ any custom permissions stored for the user.
+// Always use this (instead of raw stored permissions) when returning permissions to
+// clients, so UI-side permission gating stays in sync with backend role defaults even
+// if the stored permissions column/metadata was never explicitly seeded.
+function getEffectivePermissions(role, customPermissions) {
+  const rolePermissions = getRolePermissions(role);
+  const custom = Array.isArray(customPermissions) ? customPermissions : [];
+  return [...new Set([...rolePermissions, ...custom])];
+}
+
 module.exports = {
   DEFAULT_ROLE_PERMISSIONS,
   normalizeRole,
   isAdminRole,
   getRolePermissions,
+  getEffectivePermissions,
 };

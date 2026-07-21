@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { authenticate, requirePermission } = require('../middleware/auth');
 const { sendPasswordResetEmail } = require('../services/email_service');
 const { getAdminClient, mapRole, mergeFullName, toPublicUser, logAudit } = require('../services/supabase');
+const { getEffectivePermissions } = require('../config/permissions');
 
 const router = express.Router();
 
@@ -223,11 +224,16 @@ async function ensureInitialAdmin() {
 
 async function buildPublicUser(client, authUser, profile) {
   const metadata = authUser?.user_metadata || {};
+  const sqlPermissions = Array.isArray(profile?.permissions) ? profile.permissions : [];
+  const authPermissions = Array.isArray(metadata.permissions) ? metadata.permissions : [];
+  const customPermissions = sqlPermissions.length ? sqlPermissions : authPermissions;
   const combined = {
     ...profile,
     email: authUser?.email || '',
     telephone: metadata.telephone || '',
-    permissions: Array.isArray(metadata.permissions) ? metadata.permissions : [],
+    // Always merge role defaults so UI-side permission checks work even when the
+    // stored/custom permissions array was never explicitly seeded for this user.
+    permissions: getEffectivePermissions(profile?.role, customPermissions),
     actif: metadata.actif !== false,
     must_change_password: metadata.mustChangePassword === true,
     derniere_connexion_at: metadata.derniereConnexionAt || null,

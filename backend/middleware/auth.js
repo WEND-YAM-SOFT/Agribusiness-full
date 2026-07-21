@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getAdminClient, toAppRole } = require('../services/supabase');
-const { getRolePermissions, isAdminRole } = require('../config/permissions');
+const { getEffectivePermissions, isAdminRole } = require('../config/permissions');
 
 function extractToken(req) {
   const auth = req.headers.authorization || '';
@@ -87,11 +87,9 @@ function hasPermission(req, permission) {
   if (!req?.user) return false;
   if (isAdminRole(req.user.role)) return true;
 
-  const rolePermissions = getRolePermissions(req.user.role);
-  const userPermissions = Array.isArray(req.user.permissions) ? req.user.permissions : [];
-  const allPermissions = new Set([...rolePermissions, ...userPermissions]);
+  const allPermissions = getEffectivePermissions(req.user.role, req.user.permissions);
 
-  return allPermissions.has('*') || allPermissions.has(permission);
+  return allPermissions.includes('*') || allPermissions.includes(permission);
 }
 
 function requireAnyPermission(permissions) {
